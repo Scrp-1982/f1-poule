@@ -194,6 +194,7 @@ input[type=color] { width: 3rem; padding: .15rem; height: 2.4rem; }
 .list li { display: flex; justify-content: space-between; align-items: center; gap: .75rem; padding: .55rem 0; }
 .list li + li { border-top: 1px solid var(--line); }
 .drow select { max-width: 11rem; }
+.drow .icon { width: 2.3rem; }
 .sw { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; margin-right: .45rem; vertical-align: -1px; }
 details.gpe { border-top: 1px solid var(--line); padding: .55rem 0; }
 details.gpe summary { cursor: pointer; font-weight: 600; }
@@ -262,7 +263,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-25.6";
+const VERSION = "2026-10-25.7";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -293,7 +294,7 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add("show");
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove("show"), 3500);
+  toast.timer = setTimeout(() => t.classList.remove("show"), Math.max(3500, msg.length * 60));
 }
 const fmtDate = d => d ? new Date(d).toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" }) : "datum onbekend";
 const fmtDateTime = d => d ? new Date(d).toLocaleString("nl-NL", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "nog niet bekend";
@@ -1044,8 +1045,10 @@ async function admCalendar(box) {
 }
 
 async function getJson(url) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`de gegevensbron gaf foutcode ${r.status}`);
+  let r;
+  try { r = await fetch(url); }
+  catch { throw new Error(`de F1-gegevensbron is niet bereikbaar (${url})`); }
+  if (!r.ok) throw new Error(`de F1-gegevensbron gaf foutcode ${r.status} (${url})`);
   return r.json();
 }
 const NL_COUNTRY = {
@@ -1082,15 +1085,18 @@ async function importSeason(year) {
   } catch { /* nog geen uitslagen */ }
   if (!races.length && !drivers.length) return `Voor ${year} zijn nog geen gegevens beschikbaar.`;
 
-  const must = r => { if (r.error) throw new Error(r.error.message); return r; };
+  let step = "";
+  const must = r => { if (r.error) throw new Error(`${step}: ${r.error.message}`); return r; };
 
   // Teams
+  step = "teams opslaan";
   for (const c of cons) {
     const ex = state.teams.find(t => t.ext_id === c.constructorId) || state.teams.find(t => t.name.toLowerCase() === c.name.toLowerCase());
     if (ex) { if (ex.ext_id !== c.constructorId) must(await sb.from("teams").update({ ext_id: c.constructorId }).eq("id", ex.id)); }
     else must(await sb.from("teams").insert({ name: c.name, ext_id: c.constructorId, color: TEAM_COLORS[c.constructorId] || null }));
   }
   // Coureurs
+  step = "coureurs opslaan";
   for (const d of drivers) {
     const ex = state.drivers.find(x => x.ext_id === d.driverId) ||
       state.drivers.find(x => `${x.first_name} ${x.last_name}`.toLowerCase() === `${d.givenName} ${d.familyName}`.toLowerCase());
@@ -1106,9 +1112,11 @@ async function importSeason(year) {
     team_id: state.teams.find(t => t.ext_id === r.Constructor?.constructorId)?.id,
     number: r.number ? Number(r.number) : null,
   })).filter(r => r.driver_id && r.team_id);
+  step = "coureurs aan teams koppelen";
   if (lineup.length) must(await sb.from("season_drivers").upsert(lineup, { onConflict: "season,driver_id" }));
 
   // Races
+  step = "races opslaan";
   const { data: existing } = await sb.from("grand_prix").select("*").eq("season", year);
   let added = 0, updated = 0;
   for (const r of races) {
@@ -1243,6 +1251,7 @@ function admDrivers(box) {
             ${state.teams.map(t => `<option value="${t.id}" ${lineupOf(d.id)?.team_id === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("")}
           </select>
           <button type="button" class="btn ghost small" data-toggle-driver="${d.id}">${d.active ? "Niet actief" : "Actief"}</button>
+          <button type="button" class="icon" data-del-driver="${d.id}" aria-label="${esc(d.last_name)} verwijderen">×</button>
         </span></li>`).join("")}</ul>
       <form id="newDriver" class="row wrap">
         <input name="first" placeholder="Voornaam" required>
@@ -1257,6 +1266,7 @@ function admDrivers(box) {
         <span class="row">
           <input type="color" value="${validColor(t.color)}" data-team-color="${t.id}" aria-label="Kleur van ${esc(t.name)}">
           <button type="button" class="btn ghost small" data-toggle-team="${t.id}">${t.active ? "Niet actief" : "Actief"}</button>
+          <button type="button" class="icon" data-del-team="${t.id}" aria-label="${esc(t.name)} verwijderen">×</button>
         </span></li>`).join("")}</ul>
       <form id="newTeam" class="row">
         <input name="name" placeholder="Teamnaam" required>
@@ -1285,6 +1295,19 @@ function admDrivers(box) {
   box.onclick = async e => {
     const d = e.target.closest("[data-toggle-driver]");
     const t = e.target.closest("[data-toggle-team]");
+    const dd = e.target.closest("[data-del-driver]");
+    const dt = e.target.closest("[data-del-team]");
+    if (dd || dt) {
+      const isDriver = !!dd;
+      const x = isDriver ? driverById(Number(dd.dataset.delDriver)) : teamById(Number(dt.dataset.delTeam));
+      const label = isDriver ? `${x.first_name} ${x.last_name}` : x.name;
+      if (!confirm(`${label} verwijderen? ${isDriver ? "Ook de koppeling aan een team verdwijnt." : "Coureurs die aan dit team gekoppeld zijn, verliezen hun team."}`)) return;
+      const { error } = await sb.from(isDriver ? "drivers" : "teams").delete().eq("id", x.id);
+      if (error) return toast(error.code === "23503"
+        ? `${label} wordt al gebruikt in een voorspelling, uitslag of vraag en kan niet weg. Zet ${isDriver ? "hem" : "het"} op niet actief, dan verdwijnt ${isDriver ? "hij" : "het"} uit de keuzelijsten.`
+        : "Verwijderen lukte niet: " + error.message);
+      return refresh(`${label} verwijderd`);
+    }
     if (d) {
       const x = driverById(Number(d.dataset.toggleDriver));
       const { error } = await sb.from("drivers").update({ active: !x.active }).eq("id", x.id);

@@ -156,7 +156,8 @@ input[type=color] { width: 3rem; padding: .15rem; height: 2.4rem; }
 .gp-title { font-size: 2.3rem; }
 .q { display: grid; grid-template-columns: 1fr auto; gap: .35rem .75rem; align-items: baseline; padding: .7rem 0; }
 .q + .q { border-top: 1px solid var(--line); }
-.q select { grid-column: 1 / -1; }
+.q select, .q input { grid-column: 1 / -1; }
+.q input[type=number] { max-width: 7rem; }
 .pt { font: 600 .95rem var(--display); color: var(--muted); }
 .savebar {
   position: sticky; bottom: calc(3.6rem + env(safe-area-inset-bottom, 0px));
@@ -254,7 +255,7 @@ details.gpe form { margin-top: .75rem; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-25.3";
+const VERSION = "2026-10-25.4";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -326,6 +327,13 @@ const sameAnswer = (a, b) =>
   (a.team_id ?? null) === (b.team_id ?? null) &&
   (a.position ?? null) === (b.position ?? null);
 const isOpen = (deadline, cancelled) => !cancelled && (!deadline || new Date(deadline) > new Date());
+
+function answerInput(q, selected, attrs) {
+  if (q.answer_type === "positie") {
+    return `<input type="number" min="1" max="${POSITIONS}" inputmode="numeric" placeholder="Positie" value="${selected ?? ""}" ${attrs}>`;
+  }
+  return `<select ${attrs}>${optionsFor(q, selected)}</select>`;
+}
 
 function optionsFor(q, selected) {
   if (q.answer_type === "positie") {
@@ -639,7 +647,7 @@ async function renderQuestionPage(ctx) {
       ${groups.map(g => `<fieldset class="panel"><legend>${g.l}</legend>
         ${g.items.map(q => `<label class="q">
           <span>${esc(q.text)}</span><span class="pt">${q.points} pt</span>
-          <select name="q${q.id}">${optionsFor(q, answerValue(q, mine[q.id]))}</select>
+          ${answerInput(q, answerValue(q, mine[q.id]), `name="q${q.id}" aria-label="Antwoord"`)}
         </label>`).join("")}
       </fieldset>`).join("")}
       <div class="savebar"><span class="small" id="filled"></span><button class="btn" type="submit">Voorspelling opslaan</button></div>
@@ -699,7 +707,7 @@ async function renderQuestionPage(ctx) {
       <div class="chips">${correct.length
         ? correct.map(a => `<span class="chip">${esc(answerLabel(q, a))}${a.source === "automatisch" ? ` <span class="small">(automatisch)</span>` : ""}${admin ? `<button type="button" data-del-ans="${a.id}" aria-label="Antwoord verwijderen">×</button>` : ""}</span>`).join("")
         : `<span class="muted">Nog geen uitslag</span>`}</div>
-      ${admin ? `<div class="addans"><select data-ans-sel="${q.id}" aria-label="Juist antwoord">${optionsFor(q, null)}</select>
+      ${admin ? `<div class="addans">${answerInput(q, null, `data-ans-sel="${q.id}" aria-label="Juist antwoord"`)}
         <button type="button" class="btn ghost small" data-add-ans="${q.id}">Toevoegen</button></div>` : ""}
       <ul class="picks">${state.profiles.map(pr => {
         const p = preds.find(x => x.gp_question_id === q.id && x.user_id === pr.id);
@@ -723,6 +731,7 @@ async function renderQuestionPage(ctx) {
       const q = qs.find(x => x.id === Number(add.dataset.addAns));
       const v = view().querySelector(`[data-ans-sel="${q.id}"]`).value;
       if (!v) return toast("Kies eerst een antwoord.");
+      if (q.answer_type === "positie" && !(Number(v) >= 1 && Number(v) <= POSITIONS)) return toast(`Vul een positie van 1 tot en met ${POSITIONS} in.`);
       const { error } = await sb.from("correct_answers").insert({ gp_question_id: q.id, source: "handmatig", ...answerRow(q, v) });
       if (error) return toast("Opslaan lukte niet: " + error.message);
       toast("Antwoord opgeslagen");

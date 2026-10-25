@@ -4,49 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>F1 Poule</title>
-<meta name="theme-color" content="#16202A">
+<meta name="theme-color" content="#FF6600">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏁</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #E6E9ED;
-  --surface: #FFFFFF;
-  --ink: #16202A;
-  --muted: #5B6672;
-  --line: #CDD3D9;
-  --open: #F2B705;
-  --open-soft: #FFF4CC;
-  --closed: #D7261E;
-  --closed-soft: #FDE3E1;
-  --ok: #23874A;
-  --ok-soft: #DDF3E5;
-  --link: #1F5FBF;
-  --head: #16202A;
-  --head-ink: #FFFFFF;
+  --orange: #FF6600;
+  --bg: #000000;
+  --surface: #1A1A1A;
+  --row: #3A3A3A;
+  --ink: #FFFFFF;
+  --muted: #A6A6A6;
+  --line: #333333;
+  --open: #FF6600;
+  --open-soft: #331A07;
+  --closed: #E5483F;
+  --closed-soft: #3A1614;
+  --ok: #57C980;
+  --ok-soft: #13301E;
+  --link: #FF8A3D;
   --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
   --text: "Barlow", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color-scheme: light;
+  color-scheme: dark;
   box-sizing: border-box;
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #12181F;
-    --surface: #1C252F;
-    --ink: #EDF1F5;
-    --muted: #9AA6B2;
-    --line: #2D3845;
-    --open-soft: #3A3210;
-    --closed-soft: #3D1A18;
-    --ok: #4CC27A;
-    --ok-soft: #173424;
-    --link: #79AEFF;
-    --head: #0B1016;
-    color-scheme: dark;
-  }
 }
 *, *::before, *::after { box-sizing: inherit; }
 html, body { margin: 0; }
@@ -71,17 +55,18 @@ p { margin: 0; }
 .top {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
   display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-  background: var(--head); color: var(--head-ink);
+  background: var(--orange); color: #FFFFFF;
   padding: .7rem 1rem;
   border-bottom: 4px solid transparent;
-  border-image: repeating-linear-gradient(90deg, #fff 0 8px, #16202A 8px 16px) 4;
+  border-image: repeating-linear-gradient(90deg, #fff 0 8px, #000 8px 16px) 4;
 }
-body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--head); }
-.top h1 { font-size: 1.5rem; letter-spacing: .01em; }
-.top select { background: transparent; color: var(--head-ink); border: 1px solid #ffffff55; border-radius: 6px; padding: .3rem .5rem; font: 600 1rem var(--display); }
-.top select option { color: #16202A; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--orange); }
+.top h1 { font-size: 1.6rem; letter-spacing: .01em; }
+.top select { background: transparent; color: #FFFFFF; border: 1px solid #ffffffaa; border-radius: 6px; padding: .3rem .5rem; font: 600 1rem var(--display); }
+.top select option { color: #000; }
 
-main { max-width: 680px; margin: 0 auto; padding: 1rem; }
+main { max-width: 760px; margin: 0 auto; padding: 1rem; background: var(--bg); min-height: calc(100vh - 3.5rem); }
+@media (min-width: 800px) { body { background: var(--orange); } }
 main > * + * { margin-top: 1rem; }
 
 /* Onderbalk */
@@ -94,7 +79,7 @@ main > * + * { margin-top: 1rem; }
   flex: 1; text-align: center; padding: .85rem .25rem; text-decoration: none;
   color: var(--muted); font: 600 1.05rem var(--display); border-top: 3px solid transparent;
 }
-.tabs a.on { color: var(--ink); border-top-color: var(--closed); }
+.tabs a.on { color: var(--ink); border-top-color: var(--orange); }
 
 /* Panelen en formulieren */
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; }
@@ -111,7 +96,7 @@ input[type=color] { width: 3rem; padding: .15rem; height: 2.4rem; }
 :focus-visible { outline: 3px solid var(--link); outline-offset: 2px; }
 .btn {
   font: 600 1.05rem var(--display); letter-spacing: .02em;
-  background: var(--closed); color: #fff; border: 0; border-radius: 8px;
+  background: var(--orange); color: #000; border: 0; border-radius: 8px;
   padding: .65rem 1.1rem; cursor: pointer; text-decoration: none; display: inline-block;
 }
 .btn:disabled { opacity: .55; cursor: default; }
@@ -126,7 +111,7 @@ input[type=color] { width: 3rem; padding: .15rem; height: 2.4rem; }
   flex: 1; text-align: center; padding: .55rem .4rem; border: 0; background: none; color: var(--muted);
   font: 600 1rem var(--display); text-decoration: none; cursor: pointer;
 }
-.seg > .on { background: var(--ink); color: var(--surface); }
+.seg > .on { background: var(--orange); color: #000; }
 
 .banner { border-left: 4px solid var(--line); background: var(--surface); padding: .7rem .9rem; border-radius: 0 8px 8px 0; }
 .banner.yellow { border-color: var(--open); background: var(--open-soft); }
@@ -143,13 +128,13 @@ input[type=color] { width: 3rem; padding: .15rem; height: 2.4rem; }
 
 /* Volgende race */
 .next {
-  display: block; text-decoration: none; color: var(--head-ink); background: var(--head);
-  border-radius: 12px; padding: 1.1rem 1.1rem 1rem; position: relative; overflow: hidden;
+  display: block; text-decoration: none; color: var(--ink); background: var(--surface);
+  border: 2px solid var(--orange); border-radius: 12px; padding: 1.1rem 1.1rem 1rem; position: relative; overflow: hidden;
 }
-.next .rnd { font: 700 4.5rem/0.8 var(--display); color: #ffffff22; position: absolute; right: .6rem; top: .6rem; }
+.next .rnd { font: 700 4.5rem/0.8 var(--display); color: #FF660055; position: absolute; right: .6rem; top: .6rem; }
 .next h2 { font-size: 2.1rem; max-width: 80%; }
-.next p { margin-top: .35rem; color: #D5DCE3; }
-.meter { height: 6px; background: #ffffff26; border-radius: 3px; margin-top: .9rem; overflow: hidden; }
+.next p { margin-top: .35rem; color: var(--muted); }
+.meter { height: 6px; background: var(--row); border-radius: 3px; margin-top: .9rem; overflow: hidden; }
 .meter i { display: block; height: 100%; background: var(--open); }
 
 /* Racelijst */
@@ -161,8 +146,8 @@ input[type=color] { width: 3rem; padding: .15rem; height: 2.4rem; }
 .races .dt { font-size: .875rem; color: var(--muted); }
 .races .cancel .nm { text-decoration: line-through; color: var(--muted); }
 .pill { font: 600 .9rem var(--display); padding: .1rem .5rem; border-radius: 4px; grid-row: span 2; white-space: nowrap; }
-.pill.open { background: var(--open); color: #16202A; }
-.pill.closed { background: var(--bg); color: var(--muted); }
+.pill.open { background: var(--orange); color: #000; }
+.pill.closed { background: var(--row); color: var(--muted); }
 .pill.cancel { background: var(--closed-soft); color: var(--closed); }
 .pill.done { background: var(--ok-soft); color: var(--ok); }
 
@@ -199,7 +184,7 @@ input[type=color] { width: 3rem; padding: .15rem; height: 2.4rem; }
   border-radius: 6px; padding: .55rem .9rem .55rem .6rem;
 }
 .tower li + li { margin-top: .4rem; }
-.tower li.p1 { border-left-color: var(--open); }
+.tower li.p1 { border-left-color: var(--orange); }
 .tower .pos { font: 700 2rem/1 var(--display); text-align: center; }
 .tower .who { font-weight: 600; }
 .tower .last { font: 600 .95rem var(--display); color: var(--ok); }
@@ -216,6 +201,19 @@ details.gpe summary { cursor: pointer; font-weight: 600; }
 details.gpe form { margin-top: .75rem; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .check { display: flex; gap: .5rem; align-items: center; }
+
+/* Punten per race */
+.matrix { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.matrix table { border-collapse: collapse; font-size: .95rem; }
+.matrix th { font-weight: 500; color: var(--muted); vertical-align: bottom; padding: .5rem .3rem; }
+.matrix th.v span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; display: inline-block; }
+.matrix th.x span { text-decoration: line-through; }
+.matrix td { text-align: center; padding: .35rem .45rem; }
+.matrix td.nm, .matrix th.nm { text-align: left; padding-left: .8rem; white-space: nowrap; position: sticky; left: 0; background: inherit; }
+.matrix tbody tr:nth-child(odd) { background: var(--row); }
+.matrix tbody tr:nth-child(even) { background: var(--surface); }
+.matrix thead tr { background: var(--surface); }
+.matrix td.tot { font: 700 1.1rem var(--display); color: var(--orange); }
 
 #toast {
   position: fixed; left: 50%; bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(1rem);
@@ -245,7 +243,7 @@ details.gpe form { margin-top: .75rem; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-25.1";
+const VERSION = "2026-10-25.2";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -297,7 +295,8 @@ function untilText(d) {
 const validColor = c => /^#[0-9a-f]{6}$/i.test(c || "") ? c : "#999999";
 const driverById = id => state.drivers.find(d => d.id === id);
 const teamById = id => state.teams.find(t => t.id === id);
-const driverName = id => { const d = driverById(id); return d ? `${d.first_name} ${d.last_name}` : "Onbekende coureur"; };
+const shortName = d => `${d.first_name ? d.first_name[0] + ". " : ""}${d.last_name}`;
+const driverName = id => { const d = driverById(id); return d ? shortName(d) : "Onbekende coureur"; };
 const teamName = id => teamById(id)?.name || "Onbekend team";
 const answerValue = (q, a) => a ? a[FIELD[q.answer_type]] : null;
 function answerRow(q, value) {
@@ -327,7 +326,7 @@ function optionsFor(q, selected) {
       .filter(t => t.active || t.id === selected)
       .map(t => `<option value="${t.id}" ${t.id === selected ? "selected" : ""}>${esc(t.name)}</option>`).join("");
   }
-  const opt = d => `<option value="${d.id}" ${d.id === selected ? "selected" : ""}>${esc(d.first_name)} ${esc(d.last_name)}</option>`;
+  const opt = d => `<option value="${d.id}" ${d.id === selected ? "selected" : ""}>${esc(shortName(d))}</option>`;
   const inLineup = new Set(state.lineup.map(l => l.driver_id));
   const groups = state.teams.map(t => ({
     t, ds: state.lineup.filter(l => l.team_id === t.id).map(l => driverById(l.driver_id)).filter(Boolean),
@@ -730,17 +729,22 @@ async function renderStand() {
   view().innerHTML = LOADING;
   const [{ data: sc, error }, { data: gps }] = await Promise.all([
     sb.from("scores").select("user_id, points, grand_prix_id").eq("season", state.season),
-    sb.from("grand_prix").select("id, name, race_start").eq("season", state.season),
+    sb.from("grand_prix").select("id, name, country, race_start, status").eq("season", state.season),
   ]);
   if (error) { view().innerHTML = `<p class="panel">De stand kon niet worden geladen: ${esc(error.message)}</p>`; return; }
-  const total = {}, perGp = {};
+  const total = {}, perGp = {}, seasonPts = {};
+  let hasSeason = false;
   for (const s of sc || []) {
     total[s.user_id] = (total[s.user_id] || 0) + s.points;
     if (s.grand_prix_id) {
       const g = perGp[s.grand_prix_id] ||= {};
       g[s.user_id] = (g[s.user_id] || 0) + s.points;
+    } else {
+      hasSeason = true;
+      seasonPts[s.user_id] = (seasonPts[s.user_id] || 0) + s.points;
     }
   }
+  const cols = [...(gps || [])].sort((a, b) => new Date(a.race_start || 0) - new Date(b.race_start || 0));
   const last = (gps || []).filter(g => perGp[g.id]).sort((a, b) => new Date(b.race_start) - new Date(a.race_start))[0];
   const rows = state.profiles.map(p => ({ p, pts: total[p.id] || 0, last: last ? (perGp[last.id][p.id] || 0) : null }))
     .sort((a, b) => b.pts - a.pts || a.p.display_name.localeCompare(b.p.display_name));
@@ -752,7 +756,16 @@ async function renderStand() {
       <span class="who">${esc(r.p.display_name)}</span>
       <span class="last">${r.last ? "+" + r.last : ""}</span>
       <span class="pts">${r.pts}</span>
-    </li>`).join("")}</ol>`;
+    </li>`).join("")}</ol>
+    ${cols.length ? `<h3>Punten per race</h3>
+    <div class="matrix"><table>
+      <thead><tr><th class="nm"></th><th class="v"><span>Totaal</span></th>
+        ${cols.map(g => `<th class="v${g.status === "geannuleerd" ? " x" : ""}" title="${esc(g.name)}"><span>${esc(g.country || g.name)}</span></th>`).join("")}
+        <th class="v"><span>Seizoensvragen</span></th></tr></thead>
+      <tbody>${rows.map(r => `<tr><td class="nm">${esc(r.p.display_name)}</td><td class="tot">${r.pts}</td>
+        ${cols.map(g => `<td>${perGp[g.id] ? (perGp[g.id][r.p.id] || 0) : ""}</td>`).join("")}
+        <td>${hasSeason ? (seasonPts[r.p.id] || 0) : ""}</td></tr>`).join("")}</tbody>
+    </table></div>` : ""}`;
 }
 
 // ---------------------------------------------------------------------
@@ -1007,6 +1020,21 @@ async function getJson(url) {
   if (!r.ok) throw new Error(`de gegevensbron gaf foutcode ${r.status}`);
   return r.json();
 }
+const NL_COUNTRY = {
+  Australia: "Australië", China: "China", Japan: "Japan", Bahrain: "Bahrein", "Saudi Arabia": "Saoedi-Arabië",
+  USA: "Verenigde Staten", "United States": "Verenigde Staten", Canada: "Canada", Monaco: "Monaco", Spain: "Spanje",
+  Austria: "Oostenrijk", UK: "Groot-Brittannië", "United Kingdom": "Groot-Brittannië", Belgium: "België",
+  Hungary: "Hongarije", Netherlands: "Nederland", Italy: "Italië", Azerbaijan: "Azerbeidzjan", Singapore: "Singapore",
+  Mexico: "Mexico", Brazil: "Brazilië", Qatar: "Qatar", UAE: "Abu Dhabi", "United Arab Emirates": "Abu Dhabi",
+};
+function dutchLabel(r) {
+  const loc = r.Circuit?.Location || {};
+  if (loc.locality === "Miami") return "Miami";
+  if (loc.locality === "Las Vegas") return "Las Vegas";
+  if (r.Circuit?.circuitId === "catalunya") return "Spanje (Catalunya)";
+  if (r.Circuit?.circuitId === "imola") return "Emilia-Romagna";
+  return NL_COUNTRY[loc.country] || loc.country || r.raceName;
+}
 const isoOf = (date, time) => date ? new Date(`${date}T${time || "12:00:00Z"}`).toISOString() : null;
 
 async function importSeason(year) {
@@ -1059,8 +1087,8 @@ async function importSeason(year) {
     const row = {
       season: year,
       round: Number(r.round),
-      name: r.raceName,
-      country: r.Circuit?.Location?.country || null,
+      name: "GP " + dutchLabel(r),
+      country: dutchLabel(r),
       circuit: r.Circuit?.circuitName || null,
       ext_circuit: r.Circuit?.circuitId || null,
       quali_start: r.Qualifying ? isoOf(r.Qualifying.date, r.Qualifying.time) : null,

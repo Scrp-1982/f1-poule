@@ -204,15 +204,24 @@ details.gpe form { margin-top: .75rem; }
 .check { display: flex; gap: .5rem; align-items: center; }
 
 /* Vragen beheren */
-.qhdr, .qline { display: grid; grid-template-columns: 1fr 4.5rem 2.4rem; gap: .5rem; align-items: center; }
+.qhdr, .qline { display: grid; grid-template-columns: minmax(0, 1fr) 12rem 4.5rem 6.5rem; gap: .5rem; align-items: center; }
 .qhdr { font-size: .85rem; color: var(--muted); margin-bottom: .3rem; }
-.qhdr span:nth-child(2) { text-align: center; }
-.qline + .qline { margin-top: .45rem; }
+.qhdr span:nth-child(3) { text-align: center; }
+.qline + .qline { margin-top: .35rem; }
+.qline input, .qline select { padding: .4rem .6rem; }
 .qline input[type=number] { text-align: center; }
-.qline.add { margin-top: .9rem; padding-top: .9rem; border-top: 1px dashed var(--line); }
-.qline.add select { grid-column: 1; }
-.qline.add .btn { grid-column: 2 / 4; }
-.icon { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 6px; height: 2.4rem; cursor: pointer; font-size: 1.2rem; }
+.qline .icon { justify-self: start; width: 2.3rem; }
+.qline.add { margin-top: .7rem; padding-top: .7rem; border-top: 1px dashed var(--line); }
+.icon { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 6px; height: 2.2rem; cursor: pointer; font-size: 1.2rem; }
+@media (max-width: 640px) {
+  .qhdr { display: none; }
+  .qline { grid-template-columns: minmax(0, 1fr) 4.5rem; }
+  .qline > :first-child { grid-column: 1 / -1; }
+  .qline + .qline { margin-top: .9rem; }
+}
+
+/* Beheer op de computer: breed */
+body.wide main { max-width: 1200px; }
 
 /* Punten per race */
 .matrix { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
@@ -255,7 +264,7 @@ details.gpe form { margin-top: .75rem; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-25.4";
+const VERSION = "2026-10-25.5";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -479,6 +488,7 @@ function renderSeasonPicker() {
 function route() {
   const [page, arg] = (location.hash.slice(1) || "races").split("/");
   const tab = { gp: "races", seizoen: "races" }[page] || page;
+  document.body.classList.toggle("wide", page === "beheer");
   document.querySelectorAll(".tabs a").forEach(a => a.classList.toggle("on", a.dataset.tab === tab));
   window.scrollTo(0, 0);
   if (page === "gp") return renderGp(Number(arg));
@@ -1133,47 +1143,50 @@ async function importSeason(year) {
   return `Klaar: ${added} races toegevoegd, ${updated} bijgewerkt, ${drivers.length} coureurs en ${cons.length} teams.`;
 }
 
-// Vragen: eenvoudige lijst per onderdeel, met de punten erachter
+// Vragen: per onderdeel een regel met vraag, soort antwoord en punten
+const TYPE_LABELS = [["coureur", "Coureur"], ["team", "Team"], ["positie", "Vrije invoer (getal)"]];
+const typeSelect = (cur, attrs) => `<select ${attrs}>${TYPE_LABELS.map(([v, l]) =>
+  `<option value="${v}" ${v === cur ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+
 async function admQuestions(box) {
   const { data } = await sb.from("questions").select("*").eq("active", true).order("sort_order");
   const qs = data || [];
   const maxOrder = Math.max(0, ...qs.map(q => q.sort_order));
   const groups = [["seizoen", "Seizoensvragen"], ["kwalificatie", "Kwalificatie"], ["race", "Race"]];
   box.innerHTML = `<form id="qList" class="stack">
-    ${groups.map(([cat, label]) => {
-      const items = qs.filter(q => q.category === cat);
-      return `<fieldset class="panel">
-        <legend>${label}</legend>
-        <div class="qhdr"><span>Vraag</span><span>Punten</span><span></span></div>
-        ${items.map(q => `<div class="qline">
-          <input name="t${q.id}" value="${esc(q.text)}" required aria-label="Vraag">
-          <input name="p${q.id}" type="number" min="0" max="100" value="${q.points}" required aria-label="Punten">
-          <button type="button" class="icon" data-remove-q="${q.id}" aria-label="Vraag verwijderen">×</button>
-        </div>`).join("") || `<p class="muted small">Nog geen vragen.</p>`}
-        <div class="qline add">
-          <input placeholder="Nieuwe vraag" data-new-text="${cat}" aria-label="Nieuwe vraag">
-          <input type="number" min="0" max="100" value="1" data-new-pts="${cat}" aria-label="Punten">
-          <span></span>
-          <select data-new-type="${cat}" aria-label="Antwoord is een">
-            <option value="coureur">Antwoord is een coureur</option>
-            <option value="team">Antwoord is een team</option>
-            <option value="positie">Antwoord is een positie</option>
-          </select>
-          <button type="button" class="btn ghost small" data-add-q="${cat}">Toevoegen</button>
-        </div>
-      </fieldset>`;
-    }).join("")}
-    <p class="muted small">Wijzigingen gelden voor races die je hierna openzet. Races die al open staan, houden hun vragen en punten.</p>
-    <button class="btn">Wijzigingen opslaan</button>
+    ${groups.map(([cat, label]) => `<fieldset class="panel">
+      <legend>${label}</legend>
+      <div class="qhdr"><span>Vraag</span><span>Antwoord</span><span>Punten</span><span></span></div>
+      ${qs.filter(q => q.category === cat).map(q => `<div class="qline">
+        <input name="t${q.id}" value="${esc(q.text)}" required aria-label="Vraag">
+        ${typeSelect(q.answer_type, `name="a${q.id}" aria-label="Soort antwoord"`)}
+        <input name="p${q.id}" type="number" min="0" max="100" value="${q.points}" required aria-label="Punten">
+        <button type="button" class="icon" data-remove-q="${q.id}" aria-label="Vraag verwijderen">×</button>
+      </div>`).join("")}
+      <div class="qline add">
+        <input placeholder="Nieuwe vraag" data-new-text="${cat}" aria-label="Nieuwe vraag">
+        ${typeSelect("coureur", `data-new-type="${cat}" aria-label="Soort antwoord"`)}
+        <input type="number" min="0" max="100" value="1" data-new-pts="${cat}" aria-label="Punten">
+        <button type="button" class="btn ghost small" data-add-q="${cat}">Toevoegen</button>
+      </div>
+    </fieldset>`).join("")}
+    <div class="row wrap" style="justify-content:space-between">
+      <p class="muted small">Wijzigingen gelden voor races die je hierna openzet. Races die al open staan, houden hun vragen en punten.</p>
+      <button class="btn">Wijzigingen opslaan</button>
+    </div>
   </form>`;
 
   const form = $("#qList");
   const saveChanges = async () => {
     const changed = qs.map(q => ({
-      q, text: form.elements["t" + q.id].value.trim(), points: Number(form.elements["p" + q.id].value),
-    })).filter(x => x.text && (x.text !== x.q.text || x.points !== x.q.points));
+      q,
+      text: form.elements["t" + q.id].value.trim(),
+      answer_type: form.elements["a" + q.id].value,
+      points: Number(form.elements["p" + q.id].value),
+    })).filter(x => x.text && (x.text !== x.q.text || x.points !== x.q.points || x.answer_type !== x.q.answer_type));
     for (const x of changed) {
-      const { error } = await sb.from("questions").update({ text: x.text, points: x.points }).eq("id", x.q.id);
+      const { error } = await sb.from("questions")
+        .update({ text: x.text, points: x.points, answer_type: x.answer_type }).eq("id", x.q.id);
       if (error) { toast("Opslaan lukte niet: " + error.message); return false; }
     }
     return changed.length;

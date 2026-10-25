@@ -202,6 +202,17 @@ details.gpe form { margin-top: .75rem; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .check { display: flex; gap: .5rem; align-items: center; }
 
+/* Vragen beheren */
+.qhdr, .qline { display: grid; grid-template-columns: 1fr 4.5rem 2.4rem; gap: .5rem; align-items: center; }
+.qhdr { font-size: .85rem; color: var(--muted); margin-bottom: .3rem; }
+.qhdr span:nth-child(2) { text-align: center; }
+.qline + .qline { margin-top: .45rem; }
+.qline input[type=number] { text-align: center; }
+.qline.add { margin-top: .9rem; padding-top: .9rem; border-top: 1px dashed var(--line); }
+.qline.add select { grid-column: 1; }
+.qline.add .btn { grid-column: 2 / 4; }
+.icon { background: none; border: 1px solid var(--line); color: var(--muted); border-radius: 6px; height: 2.4rem; cursor: pointer; font-size: 1.2rem; }
+
 /* Punten per race */
 .matrix { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 .matrix table { border-collapse: collapse; font-size: .95rem; }
@@ -243,7 +254,7 @@ details.gpe form { margin-top: .75rem; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-25.2";
+const VERSION = "2026-10-25.3";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -1113,60 +1124,85 @@ async function importSeason(year) {
   return `Klaar: ${added} races toegevoegd, ${updated} bijgewerkt, ${drivers.length} coureurs en ${cons.length} teams.`;
 }
 
-// Vragen
-function qForm(q) {
-  const opt = (v, l, cur) => `<option value="${v}" ${v === cur ? "selected" : ""}>${l}</option>`;
-  return `<form class="stack qform" data-q="${q.id || ""}">
-    <label class="field"><span>Vraag</span><input name="text" required value="${esc(q.text)}"></label>
-    <div class="grid2">
-      <label class="field"><span>Wanneer</span><select name="scope">${opt("gp", "Per grand prix", q.scope)}${opt("seizoen", "Per seizoen", q.scope)}</select></label>
-      <label class="field"><span>Onderdeel</span><select name="category">${opt("kwalificatie", "Kwalificatie", q.category)}${opt("race", "Race", q.category)}${opt("seizoen", "Seizoen", q.category)}</select></label>
-    </div>
-    <div class="grid2">
-      <label class="field"><span>Soort antwoord</span><select name="answer_type">${opt("coureur", "Coureur", q.answer_type)}${opt("team", "Team", q.answer_type)}${opt("positie", "Positie", q.answer_type)}</select></label>
-      <label class="field"><span>Punten</span><input name="points" type="number" min="0" max="100" required value="${q.points ?? 1}"></label>
-    </div>
-    <div class="grid2">
-      <label class="field"><span>Over coureur (optioneel)</span><select name="subject"><option value="">Geen</option>
-        ${state.drivers.map(d => `<option value="${d.id}" ${d.id === q.subject_driver_id ? "selected" : ""}>${esc(d.first_name)} ${esc(d.last_name)}</option>`).join("")}</select></label>
-      <label class="field"><span>Volgorde</span><input name="sort_order" type="number" value="${q.sort_order ?? 0}"></label>
-    </div>
-    <label class="check"><input type="checkbox" name="active" ${q.active ? "checked" : ""}> Actief</label>
-    <button class="btn">${q.id ? "Wijzigingen opslaan" : "Vraag toevoegen"}</button>
-  </form>`;
-}
-
+// Vragen: eenvoudige lijst per onderdeel, met de punten erachter
 async function admQuestions(box) {
-  const { data } = await sb.from("questions").select("*").order("scope").order("sort_order");
+  const { data } = await sb.from("questions").select("*").eq("active", true).order("sort_order");
   const qs = data || [];
   const maxOrder = Math.max(0, ...qs.map(q => q.sort_order));
-  box.innerHTML = `
-    <p class="banner">Wijzigingen gelden voor races die je hierna openzet. Races die al open staan, houden hun vragen en punten.</p>
-    <div class="panel">
-      ${qs.map(q => `<details class="gpe"><summary>${esc(q.text)}
-        <span class="muted small">${q.points} pt${q.scope === "seizoen" ? ", seizoen" : ""}${q.active ? "" : ", niet actief"}</span></summary>${qForm(q)}</details>`).join("")}
-      <details class="gpe"><summary>Vraag toevoegen</summary>${qForm({ scope: "gp", category: "race", answer_type: "coureur", points: 1, active: true, sort_order: maxOrder + 10 })}</details>
-    </div>`;
-  box.onsubmit = async e => {
-    const form = e.target.closest(".qform");
-    if (!form) return;
+  const groups = [["seizoen", "Seizoensvragen"], ["kwalificatie", "Kwalificatie"], ["race", "Race"]];
+  box.innerHTML = `<form id="qList" class="stack">
+    ${groups.map(([cat, label]) => {
+      const items = qs.filter(q => q.category === cat);
+      return `<fieldset class="panel">
+        <legend>${label}</legend>
+        <div class="qhdr"><span>Vraag</span><span>Punten</span><span></span></div>
+        ${items.map(q => `<div class="qline">
+          <input name="t${q.id}" value="${esc(q.text)}" required aria-label="Vraag">
+          <input name="p${q.id}" type="number" min="0" max="100" value="${q.points}" required aria-label="Punten">
+          <button type="button" class="icon" data-remove-q="${q.id}" aria-label="Vraag verwijderen">×</button>
+        </div>`).join("") || `<p class="muted small">Nog geen vragen.</p>`}
+        <div class="qline add">
+          <input placeholder="Nieuwe vraag" data-new-text="${cat}" aria-label="Nieuwe vraag">
+          <input type="number" min="0" max="100" value="1" data-new-pts="${cat}" aria-label="Punten">
+          <span></span>
+          <select data-new-type="${cat}" aria-label="Antwoord is een">
+            <option value="coureur">Antwoord is een coureur</option>
+            <option value="team">Antwoord is een team</option>
+            <option value="positie">Antwoord is een positie</option>
+          </select>
+          <button type="button" class="btn ghost small" data-add-q="${cat}">Toevoegen</button>
+        </div>
+      </fieldset>`;
+    }).join("")}
+    <p class="muted small">Wijzigingen gelden voor races die je hierna openzet. Races die al open staan, houden hun vragen en punten.</p>
+    <button class="btn">Wijzigingen opslaan</button>
+  </form>`;
+
+  const form = $("#qList");
+  const saveChanges = async () => {
+    const changed = qs.map(q => ({
+      q, text: form.elements["t" + q.id].value.trim(), points: Number(form.elements["p" + q.id].value),
+    })).filter(x => x.text && (x.text !== x.q.text || x.points !== x.q.points));
+    for (const x of changed) {
+      const { error } = await sb.from("questions").update({ text: x.text, points: x.points }).eq("id", x.q.id);
+      if (error) { toast("Opslaan lukte niet: " + error.message); return false; }
+    }
+    return changed.length;
+  };
+
+  form.onsubmit = async e => {
     e.preventDefault();
-    const f = new FormData(form);
-    const scope = f.get("scope");
-    let category = f.get("category");
-    if (scope === "seizoen") category = "seizoen";
-    else if (category === "seizoen") category = "race";
-    const row = {
-      text: String(f.get("text")).trim(), scope, category,
-      answer_type: f.get("answer_type"), points: Number(f.get("points")),
-      subject_driver_id: f.get("subject") ? Number(f.get("subject")) : null,
-      sort_order: Number(f.get("sort_order")) || 0, active: f.get("active") === "on",
-    };
-    const id = Number(form.dataset.q);
-    const { error } = id ? await sb.from("questions").update(row).eq("id", id) : await sb.from("questions").insert(row);
-    if (error) return toast("Opslaan lukte niet: " + error.message);
-    toast(id ? "Wijzigingen opgeslagen" : "Vraag toegevoegd");
+    const n = await saveChanges();
+    if (n === false) return;
+    toast(n ? "Wijzigingen opgeslagen" : "Er was niets gewijzigd");
     admQuestions(box);
+  };
+  form.onclick = async e => {
+    const rm = e.target.closest("[data-remove-q]");
+    const add = e.target.closest("[data-add-q]");
+    if (rm) {
+      const q = qs.find(x => x.id === Number(rm.dataset.removeQ));
+      if (!confirm(`"${q.text}" verwijderen? Races die al open staan, houden deze vraag.`)) return;
+      if (await saveChanges() === false) return;
+      const { error } = await sb.from("questions").update({ active: false }).eq("id", q.id);
+      if (error) return toast("Verwijderen lukte niet: " + error.message);
+      toast("Vraag verwijderd");
+      admQuestions(box);
+    } else if (add) {
+      const cat = add.dataset.addQ;
+      const text = form.querySelector(`[data-new-text="${cat}"]`).value.trim();
+      if (!text) return toast("Typ eerst de nieuwe vraag.");
+      if (await saveChanges() === false) return;
+      const { error } = await sb.from("questions").insert({
+        text, category: cat, scope: cat === "seizoen" ? "seizoen" : "gp",
+        answer_type: form.querySelector(`[data-new-type="${cat}"]`).value,
+        points: Number(form.querySelector(`[data-new-pts="${cat}"]`).value) || 0,
+        sort_order: maxOrder + 10, active: true,
+      });
+      if (error) return toast("Toevoegen lukte niet: " + error.message);
+      toast("Vraag toegevoegd");
+      admQuestions(box);
+    }
   };
 }
 

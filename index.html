@@ -79,6 +79,21 @@ main > * + * { margin-top: 1rem; }
 }
 .tabs a.on { color: var(--ink); border-top-color: var(--orange); }
 
+/* Menu linksboven */
+.menubtn { background: none; border: 0; color: #FFFFFF; width: 44px; height: 44px; margin: -.4rem 0 -.4rem -.5rem; display: grid; place-items: center; cursor: pointer; border-radius: 8px; }
+.menubtn:hover { background: #00000022; }
+.menu {
+  position: fixed; z-index: 15; left: .5rem; top: calc(3.6rem + env(safe-area-inset-top, 0px));
+  min-width: 14rem; background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 8px 24px #000a; overflow: hidden;
+}
+.menu a, .menu button {
+  display: block; width: 100%; text-align: left; padding: .85rem 1.1rem; color: var(--ink); text-decoration: none;
+  background: none; border: 0; font: 600 1.2rem var(--display); cursor: pointer;
+}
+.menu > * + * { border-top: 1px solid var(--line); }
+.menu a:hover, .menu button:hover { background: var(--row); }
+
 /* Panelen en formulieren */
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; }
 fieldset.panel { margin: 0; min-width: 0; }
@@ -250,15 +265,24 @@ body.wide main { max-width: 1200px; }
 </head>
 <body>
 <header class="top">
-  <h1 id="title">F1 Poule</h1>
+  <div class="row">
+    <button type="button" id="menuBtn" class="menubtn" aria-label="Menu" aria-expanded="false" aria-controls="menu" hidden>
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+    </button>
+    <h1 id="title">F1 Poule</h1>
+  </div>
   <div id="seasonPick"></div>
 </header>
 <main id="view"><p class="loading">Laden…</p></main>
 <nav class="tabs" id="tabs" hidden>
   <a href="#races" data-tab="races">Races</a>
+  <a href="#voorspellingen" data-tab="voorspellingen">Voorspellingen</a>
   <a href="#stand" data-tab="stand">Stand</a>
-  <a href="#profiel" data-tab="profiel">Profiel</a>
-  <a href="#beheer" data-tab="beheer" id="admTab" hidden>Beheer</a>
+</nav>
+<nav class="menu" id="menu" hidden>
+  <a href="#profiel">Profiel</a>
+  <a href="#beheer" id="admMenu" hidden>Beheer</a>
+  <button type="button" id="menuLogout">Uitloggen</button>
 </nav>
 <div id="toast" role="status" aria-live="polite"></div>
 
@@ -266,7 +290,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-26.1";
+const VERSION = "2026-10-26.2";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -388,6 +412,8 @@ function authError(err) {
 
 function renderAuth(mode = "login") {
   $("#tabs").hidden = true;
+  $("#menuBtn").hidden = true;
+  closeMenu();
   $("#seasonPick").innerHTML = "";
   $("#title").textContent = "F1 Poule";
   window.onhashchange = null;
@@ -435,7 +461,8 @@ async function afterLogin(user) {
   state.me = me;
   await loadBase();
   $("#tabs").hidden = false;
-  $("#admTab").hidden = !state.me?.is_admin;
+  $("#admMenu").hidden = !state.me?.is_admin;
+  $("#menuBtn").hidden = false;
   window.onhashchange = route;
   route();
 }
@@ -489,31 +516,40 @@ function renderSeasonPicker() {
 // ---------------------------------------------------------------------
 function route() {
   const [page, arg] = (location.hash.slice(1) || "races").split("/");
-  const tab = { gp: "races", seizoen: "races" }[page] || page;
+  closeMenu();
   document.body.classList.toggle("wide", page === "beheer");
-  document.querySelectorAll(".tabs a").forEach(a => a.classList.toggle("on", a.dataset.tab === tab));
+  setTab(["gp", "seizoen"].includes(page) ? null : page);
   window.scrollTo(0, 0);
   if (page === "gp") return renderGp(Number(arg));
   if (page === "seizoen") return renderSeasonQs(Number(arg));
   if (page === "stand") return renderStand();
+  if (page === "voorspellingen") return renderHistory();
   if (page === "profiel") return renderProfile();
   if (page === "beheer" && state.me?.is_admin) return renderAdmin(arg || "deelnemers");
   return renderRaces();
 }
 const setTitle = t => $("#title").textContent = t;
+const setTab = tab => document.querySelectorAll(".tabs a").forEach(a => a.classList.toggle("on", a.dataset.tab === tab));
+
+// Menu linksboven
+function closeMenu() {
+  $("#menu").hidden = true;
+  $("#menuBtn").setAttribute("aria-expanded", "false");
+}
+$("#menuBtn").onclick = e => {
+  e.stopPropagation();
+  const open = $("#menu").hidden;
+  $("#menu").hidden = !open;
+  $("#menuBtn").setAttribute("aria-expanded", String(open));
+};
+$("#menuLogout").onclick = () => { closeMenu(); sb.auth.signOut(); };
+document.addEventListener("click", e => { if (!e.target.closest("#menu, #menuBtn")) closeMenu(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); });
 
 // ---------------------------------------------------------------------
 // Races
 // ---------------------------------------------------------------------
-async function renderRaces() {
-  setTitle("Races");
-  if (!state.season) {
-    view().innerHTML = `<div class="panel stack"><p>Er staat nog geen seizoen klaar.</p>
-      ${state.me?.is_admin ? `<a class="btn" href="#beheer/kalender">Seizoen toevoegen</a>` : `<p class="muted">De beheerder zet de kalender klaar.</p>`}</div>`;
-    return;
-  }
-  view().innerHTML = LOADING;
-  const year = state.season;
+async function seasonOverview(year) {
   const { data: gps } = await sb.from("grand_prix").select("*").eq("season", year)
     .order("race_start", { ascending: true, nullsFirst: false }).order("round");
   const ids = (gps || []).map(g => g.id);
@@ -525,53 +561,118 @@ async function renderRaces() {
   const done = new Set((mine.data || []).map(p => p.gp_question_id));
   const per = {};
   for (const q of gq.data || []) {
-    const r = per[q.grand_prix_id] ||= { total: 0, filled: 0 };
+    const r = per[q.grand_prix_id] ||= { total: 0, filled: 0, qids: [] };
     r.total++;
+    r.qids.push(q.id);
     if (done.has(q.id)) r.filled++;
   }
   const seasonQs = sq.data || [];
-  const seasonRow = state.seasons.find(s => s.year === year);
-  const seasonFilled = seasonQs.filter(q => done.has(q.id)).length;
+  return {
+    gps: gps || [], per, seasonQs,
+    seasonFilled: seasonQs.filter(q => done.has(q.id)).length,
+    seasonRow: state.seasons.find(s => s.year === year),
+  };
+}
 
-  const next = (gps || []).find(g => g.status !== "geannuleerd" && per[g.id]?.total && isOpen(g.closes_at, false));
+const noSeason = () => `<div class="panel stack"><p>Er staat nog geen seizoen klaar.</p>
+  ${state.me?.is_admin ? `<a class="btn" href="#beheer/kalender">Seizoen toevoegen</a>` : `<p class="muted">De beheerder zet de kalender klaar.</p>`}</div>`;
+
+// Races: alleen wat nog ingevuld kan worden, de eerstvolgende bovenaan
+async function renderRaces() {
+  setTitle("Races");
+  if (!state.season) { view().innerHTML = noSeason(); return; }
+  view().innerHTML = LOADING;
+  const year = state.season;
+  const { gps, per, seasonQs, seasonFilled, seasonRow } = await seasonOverview(year);
+  const open = gps.filter(g => isOpen(g.closes_at, g.status === "geannuleerd"))
+    .sort((a, b) => new Date(a.closes_at || a.race_start || 0) - new Date(b.closes_at || b.race_start || 0));
+  const seasonOpen = seasonQs.length && isOpen(seasonRow?.deadline, false);
+
   let html = "";
+  if (seasonOpen) {
+    html += `<ul class="races"><li><a href="#seizoen/${year}">
+      <span class="rnd">${String(year).slice(2)}</span>
+      <span class="nm">Seizoensvragen</span>
+      ${pill(true, false, seasonFilled, seasonQs.length)}
+      <span class="dt">Invullen kan tot ${fmtDateTime(seasonRow?.deadline)}</span>
+    </a></li></ul>`;
+  }
+  const [next, ...rest] = open;
   if (next) {
-    const r = per[next.id];
+    const r = per[next.id] || { filled: 0, total: 0 };
     html += `
       <a class="next" href="#gp/${next.id}">
         <span class="rnd" aria-hidden="true">${next.round ?? ""}</span>
         <h2>${esc(next.name)}</h2>
-        <p>Invullen en wijzigen kan tot ${fmtDateTime(next.closes_at)}${next.closes_at ? `, ${untilText(next.closes_at)}` : ""}.</p>
-        <div class="meter"><i style="width:${Math.round(r.filled / r.total * 100)}%"></i></div>
-        <p>${r.filled === r.total ? "Alles ingevuld. Je kunt nog wijzigen tot de sluitingstijd." : `${r.filled} van ${r.total} vragen ingevuld`}</p>
+        <p>${fmtDate(next.race_start)}. Invullen en wijzigen kan tot ${fmtDateTime(next.closes_at)}${next.closes_at ? `, ${untilText(next.closes_at)}` : ""}.</p>
+        <div class="meter"><i style="width:${r.total ? Math.round(r.filled / r.total * 100) : 0}%"></i></div>
+        <p>${r.total && r.filled === r.total ? "Alles ingevuld. Je kunt nog wijzigen tot de sluitingstijd." : `${r.filled} van ${r.total} vragen ingevuld`}</p>
       </a>`;
   }
-  if (seasonQs.length) {
-    const open = isOpen(seasonRow?.deadline, false);
-    html += `
-      <ul class="races"><li><a href="#seizoen/${year}">
-        <span class="rnd">${String(year).slice(2)}</span>
-        <span class="nm">Seizoensvragen</span>
-        ${pill(open, false, seasonFilled, seasonQs.length)}
-        <span class="dt">${open ? `Invullen kan tot ${fmtDateTime(seasonRow?.deadline)}` : "Gesloten"}</span>
-      </a></li></ul>`;
-  }
-  if (!(gps || []).length) {
-    html += `<div class="panel stack"><p>De kalender voor ${year} is nog leeg.</p>
-      ${state.me?.is_admin ? `<a class="btn" href="#beheer/kalender">Kalender ophalen</a>` : ""}</div>`;
-  } else {
-    html += `<ul class="races">${gps.map(g => {
+  if (rest.length) {
+    html += `<ul class="races">${rest.map(g => {
       const r = per[g.id];
-      const cancelled = g.status === "geannuleerd";
-      return `<li class="${cancelled ? "cancel" : ""}"><a href="#gp/${g.id}">
+      return `<li><a href="#gp/${g.id}">
         <span class="rnd">${g.round ?? "–"}</span>
         <span class="nm">${esc(g.name)}</span>
-        ${pill(isOpen(g.closes_at, cancelled), cancelled, r?.filled, r?.total)}
+        ${pill(true, false, r?.filled, r?.total)}
         <span class="dt">${fmtDate(g.race_start)}${g.status === "verplaatst" ? ", verplaatst" : ""}</span>
       </a></li>`;
     }).join("")}</ul>`;
   }
+  if (!next && !seasonOpen) {
+    html += gps.length
+      ? `<div class="panel stack"><p>Er staan geen races meer open in ${year}.</p><a class="btn ghost" href="#voorspellingen">Bekijk de voorspellingen</a></div>`
+      : `<div class="panel stack"><p>De kalender voor ${year} is nog leeg.</p>
+        ${state.me?.is_admin ? `<a class="btn" href="#beheer/kalender">Kalender ophalen</a>` : ""}</div>`;
+  }
   view().innerHTML = html;
+}
+
+// Voorspellingen: gesloten races van dit seizoen, de laatste bovenaan
+async function renderHistory() {
+  setTitle("Voorspellingen");
+  if (!state.season) { view().innerHTML = noSeason(); return; }
+  view().innerHTML = LOADING;
+  const year = state.season;
+  const { gps, per, seasonQs, seasonRow } = await seasonOverview(year);
+  const closed = gps.filter(g => !isOpen(g.closes_at, g.status === "geannuleerd"))
+    .sort((a, b) => new Date(b.race_start || 0) - new Date(a.race_start || 0));
+  const seasonClosed = seasonQs.length && !isOpen(seasonRow?.deadline, false);
+  const qids = [...closed.flatMap(g => per[g.id]?.qids || []), ...(seasonClosed ? seasonQs.map(q => q.id) : [])];
+  const [sc, ca] = qids.length ? await Promise.all([
+    sb.from("scores").select("gp_question_id, points").eq("user_id", state.user.id).in("gp_question_id", qids),
+    sb.from("correct_answers").select("gp_question_id").in("gp_question_id", qids),
+  ]) : [{ data: [] }, { data: [] }];
+  const pts = Object.fromEntries((sc.data || []).map(x => [x.gp_question_id, x.points]));
+  const hasResult = new Set((ca.data || []).map(x => x.gp_question_id));
+  const sum = ids => ids.reduce((t, id) => t + (pts[id] || 0), 0);
+  const badge = ids => ids.some(id => hasResult.has(id))
+    ? `<span class="pill done">+${sum(ids)}</span>`
+    : `<span class="pill closed">Geen uitslag</span>`;
+
+  if (!closed.length && !seasonClosed) {
+    view().innerHTML = `<div class="panel"><p>Nog geen gesloten races in ${year}. Zodra een race sluit, zie je hier je eigen voorspelling, die van de anderen en je punten.</p></div>`;
+    return;
+  }
+  view().innerHTML = `<p class="muted">Tik op een race voor je eigen voorspelling, die van de anderen en de punten.</p>
+    <ul class="races">
+      ${closed.map(g => {
+        const cancelled = g.status === "geannuleerd";
+        return `<li class="${cancelled ? "cancel" : ""}"><a href="#gp/${g.id}">
+          <span class="rnd">${g.round ?? "–"}</span>
+          <span class="nm">${esc(g.name)}</span>
+          ${cancelled ? `<span class="pill cancel">Geannuleerd</span>` : badge(per[g.id]?.qids || [])}
+          <span class="dt">${fmtDate(g.race_start)}</span>
+        </a></li>`;
+      }).join("")}
+      ${seasonClosed ? `<li><a href="#seizoen/${year}">
+        <span class="rnd">${String(year).slice(2)}</span>
+        <span class="nm">Seizoensvragen</span>
+        ${badge(seasonQs.map(q => q.id))}
+        <span class="dt">Gesloten ${fmtDate(seasonRow?.deadline)}</span>
+      </a></li>` : ""}
+    </ul>`;
 }
 
 function pill(open, cancelled, filled = 0, total = 0) {
@@ -620,7 +721,8 @@ async function renderQuestionPage(ctx) {
   const open = isOpen(deadline, cancelled);
   const mine = Object.fromEntries(preds.filter(p => p.user_id === state.user.id).map(p => [p.gp_question_id, p]));
 
-  let html = `<a class="back" href="#races">Alle races</a>
+  setTab(open ? "races" : "voorspellingen");
+  let html = `<a class="back" href="${open ? "#races" : "#voorspellingen"}">${open ? "Alle races" : "Alle voorspellingen"}</a>
     <div><h2 class="gp-title">${esc(title)}</h2>
     ${kind === "gp" ? `<p class="muted">${esc([gp.circuit, gp.country].filter(Boolean).join(", "))}</p>
       <p class="muted">Race: ${fmtDateTime(gp.race_start)}</p>` : ""}</div>`;

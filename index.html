@@ -290,7 +290,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-26.2";
+const VERSION = "2026-10-26.3";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -523,7 +523,7 @@ function route() {
   if (page === "gp") return renderGp(Number(arg));
   if (page === "seizoen") return renderSeasonQs(Number(arg));
   if (page === "stand") return renderStand();
-  if (page === "voorspellingen") return renderHistory();
+  if (page === "voorspellingen") return renderHistory(arg || "weekend");
   if (page === "profiel") return renderProfile();
   if (page === "beheer" && state.me?.is_admin) return renderAdmin(arg || "deelnemers");
   return renderRaces();
@@ -630,10 +630,23 @@ async function renderRaces() {
 }
 
 // Voorspellingen: gesloten races van dit seizoen, de laatste bovenaan
-async function renderHistory() {
+// Tot en met de woensdag na de race blijft een raceweekend zichtbaar
+function showUntil(raceStart) {
+  const d = new Date(raceStart);
+  d.setDate(d.getDate() + (((3 - d.getDay() + 7) % 7) || 7));
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+async function renderHistory(sub) {
   setTitle("Voorspellingen");
   if (!state.season) { view().innerHTML = noSeason(); return; }
-  view().innerHTML = LOADING;
+  const prefix = `<nav class="seg">
+    <a href="#voorspellingen/weekend" class="${sub === "weekend" ? "on" : ""}">Dit raceweekend</a>
+    <a href="#voorspellingen/alle" class="${sub === "alle" ? "on" : ""}">Al mijn voorspellingen</a>
+  </nav>`;
+  view().innerHTML = prefix + LOADING;
+  if (sub === "weekend") return renderWeekend(prefix);
   const year = state.season;
   const { gps, per, seasonQs, seasonRow } = await seasonOverview(year);
   const closed = gps.filter(g => !isOpen(g.closes_at, g.status === "geannuleerd"))
@@ -652,10 +665,10 @@ async function renderHistory() {
     : `<span class="pill closed">Geen uitslag</span>`;
 
   if (!closed.length && !seasonClosed) {
-    view().innerHTML = `<div class="panel"><p>Nog geen gesloten races in ${year}. Zodra een race sluit, zie je hier je eigen voorspelling, die van de anderen en je punten.</p></div>`;
+    view().innerHTML = prefix + `<div class="panel"><p>Nog geen gesloten races in ${year}. Zodra een race sluit, zie je hier je eigen voorspelling, die van de anderen en je punten.</p></div>`;
     return;
   }
-  view().innerHTML = `<p class="muted">Tik op een race voor je eigen voorspelling, die van de anderen en de punten.</p>
+  view().innerHTML = prefix + `<p class="muted">Tik op een race voor je eigen voorspelling, die van de anderen en de punten.</p>
     <ul class="races">
       ${closed.map(g => {
         const cancelled = g.status === "geannuleerd";
@@ -675,6 +688,38 @@ async function renderHistory() {
     </ul>`;
 }
 
+// Dit raceweekend: na het sluiten iedereens voorspelling, tot en met woensdag na de race.
+// Daarna de volgende race, met alleen je eigen antwoorden.
+async function renderWeekend(prefix) {
+  const { data: gps } = await sb.from("grand_prix").select("*").eq("season", state.season)
+    .neq("status", "geannuleerd").order("race_start", { ascending: true, nullsFirst: false });
+  const now = new Date();
+  const current = (gps || []).find(g => g.closes_at && new Date(g.closes_at) <= now && now <= showUntil(g.race_start));
+  if (current) return renderGp(current.id, { prefix });
+
+  const next = (gps || []).find(g => !g.closes_at || new Date(g.closes_at) > now);
+  if (!next) {
+    view().innerHTML = prefix + `<div class="panel"><p>Er komen geen races meer in ${state.season}.</p></div>`;
+    return;
+  }
+  const { data: qs } = await sb.from("gp_questions").select("*").eq("grand_prix_id", next.id).order("sort_order");
+  const ids = (qs || []).map(q => q.id);
+  const { data: mineRows } = ids.length
+    ? await sb.from("predictions").select("*").eq("user_id", state.user.id).in("gp_question_id", ids)
+    : { data: [] };
+  const mine = Object.fromEntries((mineRows || []).map(p => [p.gp_question_id, p]));
+  const groups = CATS.map(([k, l]) => ({ l, items: (qs || []).filter(q => q.category === k) })).filter(g => g.items.length);
+  view().innerHTML = prefix + `
+    <div><h2 class="gp-title">${esc(next.name)}</h2>
+      <p class="muted">Race: ${fmtDateTime(next.race_start)}</p></div>
+    <p class="banner">De voorspellingen van iedereen worden zichtbaar op ${fmtDateTime(next.closes_at)}, zodra het invullen sluit. Hieronder zie je alleen wat jij hebt ingevuld.</p>
+    ${groups.map(g => `<fieldset class="panel"><legend>${g.l}</legend>
+      <ul class="list">${g.items.map(q => `<li><span>${esc(q.text)}</span>
+        <span class="${mine[q.id] ? "" : "muted"}" style="text-align:right">${mine[q.id] ? esc(answerLabel(q, mine[q.id])) : "niet ingevuld"}</span></li>`).join("")}</ul>
+    </fieldset>`).join("")}
+    <a class="btn" href="#gp/${next.id}">Invullen of wijzigen</a>`;
+}
+
 function pill(open, cancelled, filled = 0, total = 0) {
   if (cancelled) return `<span class="pill cancel">Geannuleerd</span>`;
   if (!open) return `<span class="pill closed">Gesloten</span>`;
@@ -685,14 +730,14 @@ function pill(open, cancelled, filled = 0, total = 0) {
 // ---------------------------------------------------------------------
 // Voorspellen en uitslag
 // ---------------------------------------------------------------------
-async function renderGp(id) {
-  view().innerHTML = LOADING;
+async function renderGp(id, extra = {}) {
+  if (!extra.prefix) view().innerHTML = LOADING;
   const { data: gp } = await sb.from("grand_prix").select("*").eq("id", id).maybeSingle();
   if (!gp) { view().innerHTML = `<p class="panel">Deze grand prix bestaat niet (meer). <a href="#races">Naar alle races</a></p>`; return; }
   if (gp.season !== state.season) await setSeason(gp.season);
   const { data: qs } = await sb.from("gp_questions").select("*").eq("grand_prix_id", id).order("sort_order");
   renderQuestionPage({
-    kind: "gp", gp, qs: qs || [], deadline: gp.closes_at, cancelled: gp.status === "geannuleerd", title: gp.name,
+    kind: "gp", gp, qs: qs || [], deadline: gp.closes_at, cancelled: gp.status === "geannuleerd", title: gp.name, ...extra,
   });
 }
 
@@ -721,8 +766,9 @@ async function renderQuestionPage(ctx) {
   const open = isOpen(deadline, cancelled);
   const mine = Object.fromEntries(preds.filter(p => p.user_id === state.user.id).map(p => [p.gp_question_id, p]));
 
-  setTab(open ? "races" : "voorspellingen");
-  let html = `<a class="back" href="${open ? "#races" : "#voorspellingen"}">${open ? "Alle races" : "Alle voorspellingen"}</a>
+  setTab(ctx.prefix ? "voorspellingen" : open ? "races" : "voorspellingen");
+  if (ctx.prefix) setTitle("Voorspellingen");
+  let html = (ctx.prefix ?? `<a class="back" href="${open ? "#races" : "#voorspellingen/alle"}">${open ? "Alle races" : "Alle voorspellingen"}</a>`) + `
     <div><h2 class="gp-title">${esc(title)}</h2>
     ${kind === "gp" ? `<p class="muted">${esc([gp.circuit, gp.country].filter(Boolean).join(", "))}</p>
       <p class="muted">Race: ${fmtDateTime(gp.race_start)}</p>` : ""}</div>`;

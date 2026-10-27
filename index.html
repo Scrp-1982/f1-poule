@@ -159,7 +159,7 @@ input[type=color] { width: 3rem; padding: .15rem; height: 2.4rem; }
 /* Racelijst */
 .races { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 .races li + li { border-top: 1px solid var(--line); }
-.races a { display: grid; grid-template-columns: 2.4rem 1fr auto auto; gap: .2rem .6rem; align-items: center; padding: .7rem .9rem; color: var(--ink); text-decoration: none; }
+.races a { display: grid; grid-template-columns: 2.4rem 1fr 22px 4.6rem; gap: .2rem .6rem; align-items: center; padding: .7rem .9rem; color: var(--ink); text-decoration: none; }
 .races .chk { grid-row: span 2; display: grid; place-items: center; width: 22px; opacity: .85; }
 .next .ok-mark { position: absolute; right: 1rem; bottom: .9rem; opacity: .85; line-height: 0; }
 .next p:last-of-type { padding-right: 2rem; }
@@ -168,7 +168,9 @@ input[type=color] { width: 3rem; padding: .15rem; height: 2.4rem; }
 .races .nm { font-weight: 600; }
 .races .dt { font-size: .875rem; color: var(--muted); }
 .races .cancel .nm { text-decoration: line-through; color: var(--muted); }
-.pill { font: 600 .9rem var(--display); padding: .1rem .5rem; border-radius: 4px; grid-row: span 2; white-space: nowrap; }
+.pill { font: 600 .9rem var(--display); padding: .15rem .5rem; border-radius: 4px; grid-row: span 2; white-space: nowrap; text-align: center; align-self: center; }
+.races .pill { justify-self: stretch; }
+.races.hist a { grid-template-columns: 2.4rem 1fr 6.4rem; }
 .pill.open { background: var(--orange); color: #000; }
 .pill.closed { background: var(--row); color: var(--muted); }
 .pill.cancel { background: var(--closed-soft); color: var(--closed); }
@@ -297,7 +299,7 @@ body.wide main { max-width: 1200px; }
 .pmx .res { background: var(--surface); font-weight: 600; border-left: 2px solid var(--orange); border-right: 2px solid var(--orange); }
 .pmx thead th.res { color: var(--orange); }
 .pmx th.me { color: var(--orange); }
-.pmx .tot td { background: #8C8C8C; color: #000; font: 700 1.05rem var(--display); text-align: center; }
+.pmx .tot td { font: 700 1.15rem var(--display); color: var(--ink); }
 .pmx .tot td.res { background: var(--surface); }
 .pmx .tot th { font-size: .85rem; color: var(--muted); }
 .pmx .cat th { color: var(--orange); font-weight: 600; padding-top: 1rem; }
@@ -359,7 +361,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-27.9";
+const VERSION = "2026-10-27.11";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -773,7 +775,7 @@ async function renderHistory(sub) {
     return;
   }
   view().innerHTML = prefix + `<p class="muted">Tik op een race voor je eigen voorspelling, die van de anderen en de punten.</p>
-    <ul class="races">
+    <ul class="races hist">
       ${closed.map(g => {
         const cancelled = g.status === "geannuleerd";
         return `<li class="${cancelled ? "cancel" : ""}"><a href="#gp/${g.id}">
@@ -987,7 +989,7 @@ async function renderQuestionPage(ctx) {
       <tr><th class="q"></th><th class="res">Uitslag</th>
         ${people.map((p, i) => `<th ${col(i, p.id === state.user.id ? "me" : "")}>${esc(p.display_name)}</th>`).join("")}</tr>
       <tr class="tot"><th class="q">${showPts ? "Punten deze race" : ""}</th><td class="res"></td>
-        ${people.map(p => `<td>${showPts ? raceTotal(p.id) : ""}</td>`).join("")}</tr>
+        ${people.map((p, i) => `<td ${col(i)}>${showPts ? raceTotal(p.id) : ""}</td>`).join("")}</tr>
     </thead>
     ${mgroups.map(g => `<tbody>
       <tr class="cat"><th class="q">${g.l}</th><td class="res"></td>${people.map((p, i) => `<td ${col(i)}></td>`).join("")}</tr>
@@ -1000,13 +1002,13 @@ async function renderQuestionPage(ctx) {
             const p = pred(q, pr.id);
             if (!p) return `<td ${col(i, "none")}>–</td>`;
             const ok = isRight(q, p);
-            return `<td ${col(i, ok ? "hit" : "")}>${esc(answerLabel(q, p))}${ok ? ` <span class="plus">+${q.points}</span>` : ""}</td>`;
+            return `<td ${col(i, ok ? "hit" : "")}>${esc(answerLabel(q, p))}</td>`;
           }).join("")}
         </tr>`;
       }).join("")}
     </tbody>`).join("")}
   </table></div>
-  <p class="muted small">Een groen antwoord is goed, met de punten erachter. Op een telefoon kun je de tabel opzij schuiven; de vragen blijven staan.</p>`;
+  <p class="muted small">Een groen antwoord is goed. Op een telefoon kun je de tabel opzij schuiven; de vragen blijven staan.</p>`;
   view().innerHTML = html;
 
 }

@@ -84,6 +84,8 @@ main > * + * { margin-top: 1rem; }
   color: var(--muted); font: 600 1.05rem var(--display); border-top: 3px solid transparent;
 }
 .tabs a.on { color: var(--ink); border-top-color: var(--orange); }
+.tabs a { white-space: nowrap; }
+@media (max-width: 420px) { .tabs a { font-size: .95rem; padding-left: .1rem; padding-right: .1rem; } }
 
 /* Menu linksboven */
 .menubtn { background: none; border: 0; color: #FFFFFF; width: 44px; height: 44px; margin: -.4rem 0 -.4rem -.5rem; display: grid; place-items: center; cursor: pointer; border-radius: 8px; }
@@ -355,6 +357,7 @@ body.wide main { max-width: 1200px; }
 </header>
 <main id="view"><p class="loading">Laden…</p></main>
 <nav class="tabs" id="tabs" hidden>
+  <a href="#uitslagen" data-tab="uitslagen" id="resTab" hidden>Uitslagen</a>
   <a href="#races" data-tab="races">Races</a>
   <a href="#voorspellingen" data-tab="voorspellingen">Voorspellingen</a>
   <a href="#stand" data-tab="stand">Stand</a>
@@ -371,7 +374,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-28.3";
+const VERSION = "2026-10-28.4";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -574,6 +577,7 @@ async function afterLogin(user) {
   await loadBase();
   $("#tabs").hidden = false;
   $("#admMenu").hidden = !state.me?.is_admin;
+  $("#resTab").hidden = !state.me?.is_admin;
   $("#menuBtn").hidden = false;
   window.onhashchange = route;
   route();
@@ -629,7 +633,7 @@ function renderSeasonPicker() {
 function route() {
   const [page, arg] = (location.hash.slice(1) || "races").split("/");
   closeMenu();
-  document.body.classList.toggle("wide", page === "beheer");
+  document.body.classList.toggle("wide", page === "beheer" || page === "uitslagen");
   setTab(["gp", "seizoen"].includes(page) ? null : page);
   window.scrollTo(0, 0);
   if (page === "gp") return renderGp(Number(arg));
@@ -637,7 +641,8 @@ function route() {
   if (page === "stand") return renderStand();
   if (page === "voorspellingen") return renderHistory(arg || "weekend");
   if (page === "profiel") return renderProfile();
-  if (page === "beheer" && state.me?.is_admin) return renderAdmin(arg || "uitslagen");
+  if (page === "beheer" && state.me?.is_admin) return renderAdmin(arg || "kalender");
+  if (page === "uitslagen" && state.me?.is_admin) return renderResultsTab();
   if (page === "spelregels") return renderRules();
   return renderRaces();
 }
@@ -1241,6 +1246,18 @@ async function mfaPanel(el) {
 // ---------------------------------------------------------------------
 // Beheer
 // ---------------------------------------------------------------------
+const needMfa = () => `<div class="panel stack"><h3>Tweestapsverificatie nodig</h3>
+  <p>Dit deel is alleen te gebruiken met tweestapsverificatie. Zet die aan via het menu, bij Profiel. Heb je hem al aan, log dan opnieuw in met je code.</p>
+  <a class="btn" href="#profiel">Naar Profiel</a></div>`;
+
+async function renderResultsTab() {
+  setTitle("Uitslagen");
+  if (state.aal !== "aal2") { view().innerHTML = needMfa(); return; }
+  view().onclick = null;
+  view().innerHTML = `<div id="adm" class="stack">${LOADING}</div>`;
+  admResults($("#adm"));
+}
+
 async function renderAdmin(sub) {
   setTitle("Beheer");
   if (state.aal !== "aal2") {
@@ -1249,12 +1266,11 @@ async function renderAdmin(sub) {
       <a class="btn" href="#profiel">Naar Profiel</a></div>`;
     return;
   }
-  const subs = [["uitslagen", "Uitslagen"], ["kalender", "Kalender"], ["vragen", "Vragen"], ["coureurs", "Coureurs"], ["deelnemers", "Deelnemers"], ["meldingen", "Meldingen"]];
+  const subs = [["kalender", "Kalender"], ["vragen", "Vragen"], ["coureurs", "Coureurs"], ["deelnemers", "Deelnemers"], ["meldingen", "Meldingen"]];
   view().onclick = null;
   view().innerHTML = `<nav class="seg">${subs.map(([k, l]) => `<a href="#beheer/${k}" class="${k === sub ? "on" : ""}">${l}</a>`).join("")}</nav>
     <div id="adm" class="stack">${LOADING}</div>`;
   const box = $("#adm");
-  if (sub === "uitslagen") return admResults(box);
   if (sub === "meldingen") return admNotifications(box);
   if (sub === "kalender") return admCalendar(box);
   if (sub === "vragen") return admQuestions(box);
@@ -1407,14 +1423,43 @@ async function admResults(box) {
   const { data: ans } = await sb.from("correct_answers").select("*").in("gp_question_id", qs.map(q => q.id));
   const cur = id => (ans || []).find(a => a.gp_question_id === id);
 
+  // Wat er in het formulier staat; confirm = voorstellen ook bevestigen
+  const collectResults = confirm => {
+    const form = $("#resForm");
+    const changed = [], inserts = [];
+    if (!form) return { changed, inserts };
+    for (const q of qs) {
+      const v = form.elements["r" + q.id].value;
+      const a = cur(q.id);
+      const same = v ? a && sameAnswer(a, answerRow(q, v)) && (!confirm || a.source !== "voorstel") : !a;
+      if (same) continue;
+      changed.push(q.id);
+      if (v) inserts.push({ gp_question_id: q.id, source: "handmatig", ...answerRow(q, v) });
+    }
+    return { changed, inserts };
+  };
+  const writeResults = async ({ changed, inserts }) => {
+    let { error } = await sb.from("correct_answers").delete().in("gp_question_id", changed);
+    if (!error && inserts.length) ({ error } = await sb.from("correct_answers").insert(inserts));
+    return error;
+  };
+
   $("#fetchRes").onclick = async e => {
     const b = e.target;
     b.disabled = true;
     b.textContent = "Bezig met ophalen…";
     try {
+      // Eerst bewaren wat je zelf al had ingevuld, zodat ophalen dat nooit overschrijft
+      const pending = collectResults(false);
+      if (pending.changed.length) {
+        const error = await writeResults(pending);
+        if (error) throw new Error(error.message);
+      }
+      const { data: fresh } = await sb.from("correct_answers").select("*").in("gp_question_id", qs.map(q => q.id));
+      const manual = new Set((fresh || []).filter(a => a.source === "handmatig").map(a => a.gp_question_id));
       const out = sel === "seizoen" ? await deriveSeason(year, qs) : await deriveResults(gp, qs);
       fetchNotes = Object.fromEntries(Object.entries(out).map(([id, o]) => [id, o.note]));
-      const ids = Object.keys(out).map(Number).filter(id => out[id].v && cur(id)?.source !== "handmatig");
+      const ids = Object.keys(out).map(Number).filter(id => out[id].v && !manual.has(id));
       if (ids.length) {
         let { error } = await sb.from("correct_answers").delete().in("gp_question_id", ids).neq("source", "handmatig");
         if (!error) ({ error } = await sb.from("correct_answers").insert(ids.map(id => ({
@@ -1470,19 +1515,9 @@ async function admResults(box) {
   };
   $("#resForm").onsubmit = async e => {
     e.preventDefault();
-    const form = e.target;
-    const changed = [], inserts = [];
-    for (const q of qs) {
-      const v = form.elements["r" + q.id].value;
-      const a = cur(q.id);
-      const same = v ? a && a.source !== "voorstel" && sameAnswer(a, answerRow(q, v)) : !a;
-      if (same) continue;
-      changed.push(q.id);
-      if (v) inserts.push({ gp_question_id: q.id, source: "handmatig", ...answerRow(q, v) });
-    }
-    if (!changed.length) return toast("Er was niets gewijzigd");
-    let { error } = await sb.from("correct_answers").delete().in("gp_question_id", changed);
-    if (!error && inserts.length) ({ error } = await sb.from("correct_answers").insert(inserts));
+    const pending = collectResults(true);
+    if (!pending.changed.length) return toast("Er was niets gewijzigd");
+    const error = await writeResults(pending);
     if (error) return toast("Opslaan lukte niet: " + error.message);
     fetchNotes = {};
     toast("Uitslag opgeslagen");

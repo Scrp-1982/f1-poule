@@ -287,6 +287,24 @@ body.wide main { max-width: 1200px; }
 .ntline { display: grid; grid-template-columns: auto 8rem; gap: .75rem; align-items: end; }
 @media (max-width: 640px) { .ntline { grid-template-columns: 1fr 1fr; } .ntline .check { grid-column: 1 / -1; } }
 
+/* Overzicht voorspellingen per race */
+.pmx { overflow-x: auto; background: #000; border: 1px solid var(--line); border-radius: 10px; }
+.pmx table { border-collapse: collapse; font-size: .95rem; min-width: 100%; }
+.pmx th, .pmx td { padding: .32rem .7rem; text-align: left; white-space: nowrap; font-weight: 400; vertical-align: top; }
+.pmx thead th { font-weight: 600; padding-top: .6rem; }
+.pmx .q { position: sticky; left: 0; z-index: 1; background: #000; white-space: normal; min-width: 10.5rem; max-width: 16rem; }
+.pmx .alt { background: var(--row); }
+.pmx .res { background: var(--surface); font-weight: 600; border-left: 2px solid var(--orange); border-right: 2px solid var(--orange); }
+.pmx thead th.res { color: var(--orange); }
+.pmx th.me { color: var(--orange); }
+.pmx .tot td { background: #8C8C8C; color: #000; font: 700 1.05rem var(--display); text-align: center; }
+.pmx .tot td.res { background: var(--surface); }
+.pmx .tot th { font-size: .85rem; color: var(--muted); }
+.pmx .cat th { color: var(--orange); font-weight: 600; padding-top: 1rem; }
+.pmx td.hit { color: var(--ok); font-weight: 600; }
+.pmx .plus { font: 700 .85rem var(--display); }
+.pmx td.none { color: var(--muted); }
+
 /* Punten per race */
 .matrix { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 .matrix table { border-collapse: collapse; font-size: .95rem; }
@@ -338,7 +356,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-27.5";
+const VERSION = "2026-10-27.6";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -925,43 +943,62 @@ async function renderQuestionPage(ctx) {
     return;
   }
 
-  // Gesloten: juiste antwoorden en ieders voorspelling
-  const correctFor = id => answers.filter(a => a.gp_question_id === id);
+  // Gesloten: tabel met links de vragen en per deelnemer een kolom
+  document.body.classList.add("wide");
+  let allQs = qs, allPreds = preds, allAnswers = answers;
+  if (kind === "gp") {
+    const s = state.seasons.find(x => x.year === gp.season);
+    if (s?.deadline && new Date(s.deadline) <= new Date()) {
+      const { data: sq } = await sb.from("gp_questions").select("*").eq("season", gp.season).order("sort_order");
+      if (sq?.length) {
+        const sids = sq.map(q => q.id);
+        const [sp, sa] = await Promise.all([
+          sb.from("predictions").select("*").in("gp_question_id", sids),
+          sb.from("correct_answers").select("*").in("gp_question_id", sids),
+        ]);
+        allQs = [...qs, ...sq];
+        allPreds = [...preds, ...(sp.data || [])];
+        allAnswers = [...answers, ...(sa.data || [])];
+      }
+    }
+  }
+  const correctFor = id => allAnswers.filter(a => a.gp_question_id === id);
   const isRight = (q, p) => correctFor(q.id).some(a => sameAnswer(a, p));
-  const others = state.profiles.filter(p => p.id !== state.user.id);
-  const totals = {};
-  for (const p of preds) {
-    const q = qs.find(x => x.id === p.gp_question_id);
-    if (q && isRight(q, p)) totals[p.user_id] = (totals[p.user_id] || 0) + q.points;
-  }
-  if (answers.length && !cancelled) {
-    const ranked = state.profiles.map(p => ({ p, pts: totals[p.id] || 0 })).sort((a, b) => b.pts - a.pts || a.p.display_name.localeCompare(b.p.display_name));
-    html += `<div><h3>Punten ${kind === "gp" ? "deze race" : "seizoensvragen"}</h3></div>
-      <ol class="tower">${ranked.map((r, i) => `<li class="${i === 0 && r.pts ? "p1" : ""}">
-        <span class="pos">${ranked.findIndex(x => x.pts === r.pts) + 1}</span>
-        <span class="who">${esc(r.p.display_name)}</span><span></span>
-        <span class="pts">${r.pts}</span></li>`).join("")}</ol>`;
-  }
-  html += groups.map(g => `<h3>${g.l}</h3>` + g.items.map(q => {
-    const correct = correctFor(q.id);
-    return `<div class="panel qres">
-      <div class="qhead"><span>${esc(q.text)}</span></div>
-      <div class="mine">
-        <span class="muted small">Jij</span>
-        <span>${mine[q.id] ? esc(answerLabel(q, mine[q.id])) : `<span class="muted">niet ingevuld</span>`}</span>
-        <span class="gain ${correct.length && !(mine[q.id] && isRight(q, mine[q.id])) ? "zero" : ""}">${!correct.length ? "" : mine[q.id] && isRight(q, mine[q.id]) ? "+" + q.points : "0"}</span>
-      </div>
-      <div class="chips"><span class="muted small">Uitslag</span>${correct.length
-        ? correct.map(a => `<span class="chip">${esc(answerLabel(q, a))}${a.source === "automatisch" ? ` <span class="small">(automatisch)</span>` : ""}</span>`).join("")
-        : `<span class="muted">Nog geen uitslag</span>`}</div>
-      <ul class="picks">${others.map(pr => {
-        const p = preds.find(x => x.gp_question_id === q.id && x.user_id === pr.id);
-        if (!p) return `<li class="muted"><span>${esc(pr.display_name)}</span><span>niet ingevuld</span><span></span></li>`;
-        const ok = isRight(q, p);
-        return `<li class="${ok ? "hit" : ""}"><span>${esc(pr.display_name)}</span><span>${esc(answerLabel(q, p))}</span><span class="gain">${ok ? "+" + q.points : ""}</span></li>`;
-      }).join("")}</ul>
-    </div>`;
-  }).join("")).join("");
+  const pred = (q, uid) => allPreds.find(x => x.gp_question_id === q.id && x.user_id === uid);
+  const people = state.profiles;
+  const showPts = answers.length > 0 && !cancelled;
+  const raceTotal = uid => qs.reduce((t, q) => {
+    const p = pred(q, uid);
+    return t + (p && isRight(q, p) ? q.points : 0);
+  }, 0);
+  const col = (i, extra = "") => `class="${i % 2 ? "alt" : ""} ${extra}"`;
+  const mgroups = CATS.map(([k, l]) => ({ l, items: allQs.filter(q => q.category === k) })).filter(g => g.items.length);
+
+  html += `<div class="pmx"><table>
+    <thead>
+      <tr><th class="q"></th><th class="res">Uitslag</th>
+        ${people.map((p, i) => `<th ${col(i, p.id === state.user.id ? "me" : "")}>${esc(p.display_name)}</th>`).join("")}</tr>
+      <tr class="tot"><th class="q">${showPts ? "Punten deze race" : ""}</th><td class="res"></td>
+        ${people.map(p => `<td>${showPts ? raceTotal(p.id) : ""}</td>`).join("")}</tr>
+    </thead>
+    ${mgroups.map(g => `<tbody>
+      <tr class="cat"><th class="q">${g.l}</th><td class="res"></td>${people.map((p, i) => `<td ${col(i)}></td>`).join("")}</tr>
+      ${g.items.map(q => {
+        const c = correctFor(q.id);
+        return `<tr>
+          <th class="q">${esc(q.text)}</th>
+          <td class="res">${c.length ? c.map(a => esc(answerLabel(q, a))).join(" / ") : "–"}</td>
+          ${people.map((pr, i) => {
+            const p = pred(q, pr.id);
+            if (!p) return `<td ${col(i, "none")}>–</td>`;
+            const ok = isRight(q, p);
+            return `<td ${col(i, ok ? "hit" : "")}>${esc(answerLabel(q, p))}${ok ? ` <span class="plus">+${q.points}</span>` : ""}</td>`;
+          }).join("")}
+        </tr>`;
+      }).join("")}
+    </tbody>`).join("")}
+  </table></div>
+  <p class="muted small">Een groen antwoord is goed, met de punten erachter. Op een telefoon kun je de tabel opzij schuiven; de vragen blijven staan.</p>`;
   view().innerHTML = html;
 
 }

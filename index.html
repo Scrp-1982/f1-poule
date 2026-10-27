@@ -356,7 +356,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-27.6";
+const VERSION = "2026-10-27.7";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -886,8 +886,8 @@ async function renderQuestionPage(ctx) {
   else if (gp?.status === "verplaatst") html += `<p class="banner">Deze race is verplaatst. Je voorspellingen blijven gewoon staan.</p>`;
   if (!cancelled && open) {
     html += deadline
-      ? `<p class="banner yellow">Invullen en wijzigen kan tot ${fmtDateTime(deadline)} (${untilText(deadline)}). Daarna zie je ook de voorspellingen van de anderen en je punten.</p>`
-      : `<p class="banner yellow">De sluitingstijd is nog niet bekend. Daarna zie je ook de voorspellingen van de anderen.</p>`;
+      ? `<p class="banner yellow">Invullen en wijzigen kan tot ${fmtDateTime(deadline)} (${untilText(deadline)}).</p>`
+      : `<p class="banner yellow">De sluitingstijd is nog niet bekend.</p>`;
   } else if (!cancelled) {
     html += `<p class="banner">Gesloten sinds ${fmtDateTime(deadline)}.</p>`;
   }

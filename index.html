@@ -271,6 +271,14 @@ body.wide main { max-width: 1200px; }
   .resline > :first-child { grid-column: 1 / -1; }
 }
 
+
+.tag { font: 500 .85rem var(--text); justify-self: start; color: var(--muted); }
+.tag.prop { color: #E08A4F; }
+.tag.auto { color: var(--muted); }
+.tag.edit { color: var(--ink); }
+.resline.isprop input, .resline.isprop select { border-color: #8A4A22; }
+.resline.edited input, .resline.edited select { border-style: dashed; border-color: #6A6A6A; }
+
 /* Spelregels */
 .rules p { margin: 0 0 1.1rem; line-height: 1.65; }
 .rules .rh { font: 400 1.05rem var(--text); display: inline-block; border-bottom: 1px solid var(--orange); padding: 0 1rem .1rem 0; margin: .4rem 0 .2rem; }
@@ -363,7 +371,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-27.12";
+const VERSION = "2026-10-28.3";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -763,7 +771,7 @@ async function renderHistory(sub) {
   const qids = [...closed.flatMap(g => per[g.id]?.qids || []), ...(seasonClosed ? seasonQs.map(q => q.id) : [])];
   const [sc, ca] = qids.length ? await Promise.all([
     sb.from("scores").select("gp_question_id, points").eq("user_id", state.user.id).in("gp_question_id", qids),
-    sb.from("correct_answers").select("gp_question_id").in("gp_question_id", qids),
+    sb.from("correct_answers").select("gp_question_id").in("gp_question_id", qids).neq("source", "voorstel"),
   ]) : [{ data: [] }, { data: [] }];
   const pts = Object.fromEntries((sc.data || []).map(x => [x.gp_question_id, x.points]));
   const hasResult = new Set((ca.data || []).map(x => x.gp_question_id));
@@ -879,7 +887,7 @@ async function renderQuestionPage(ctx) {
   if (ids.length) {
     const [p, a] = await Promise.all([
       sb.from("predictions").select("*").in("gp_question_id", ids),
-      sb.from("correct_answers").select("*").in("gp_question_id", ids).order("created_at"),
+      sb.from("correct_answers").select("*").in("gp_question_id", ids).neq("source", "voorstel").order("created_at"),
     ]);
     preds = p.data || [];
     answers = a.data || [];
@@ -966,7 +974,7 @@ async function renderQuestionPage(ctx) {
         const sids = sq.map(q => q.id);
         const [sp, sa] = await Promise.all([
           sb.from("predictions").select("*").in("gp_question_id", sids),
-          sb.from("correct_answers").select("*").in("gp_question_id", sids),
+          sb.from("correct_answers").select("*").in("gp_question_id", sids).neq("source", "voorstel"),
         ]);
         allQs = [...qs, ...sq];
         allPreds = [...preds, ...(sp.data || [])];
@@ -1254,12 +1262,121 @@ async function renderAdmin(sub) {
   return admPeople(box);
 }
 
-// Uitslagen per grand prix invullen
+// Uitslagen per grand prix invullen, met ophalen bij de gegevensbron
 let resultsSel = null;
+let fetchNotes = {};
+
+const isFinished = r => r.status === "Finished" || r.status === "Lapped" || /^\+\d+ Laps?$/.test(r.status);
+const isStarter = r => !/did not start|withdrew|did not qualify|did not prequalify/i.test(r.status || "");
+
+// Antwoorden afleiden uit de uitslag. Geeft per vraag { v, src, note }.
+async function deriveResults(gp, qs) {
+  const base = `${F1_API}${gp.season}/${gp.round}`;
+  const [rr, qq, pp] = await Promise.all([
+    getJson(base + "/results.json?limit=100").catch(() => null),
+    getJson(base + "/qualifying.json?limit=100").catch(() => null),
+    getJson(base + "/pitstops.json?limit=200").catch(() => null),
+  ]);
+  const race = rr?.MRData?.RaceTable?.Races?.[0];
+  const qual = qq?.MRData?.RaceTable?.Races?.[0];
+  const circuit = (race || qual)?.Circuit?.circuitId;
+  if (circuit && gp.ext_circuit && circuit !== gp.ext_circuit) {
+    throw new Error(`ronde ${gp.round} is bij de gegevensbron een andere race (${circuit}). Haal eerst de kalender opnieuw op.`);
+  }
+  if (!race && !qual) throw new Error("er is voor deze race nog geen uitslag beschikbaar");
+  const results = race?.Results || [];
+  const quali = qual?.QualifyingResults || [];
+  const stops = pp?.MRData?.RaceTable?.Races?.[0]?.PitStops || [];
+  const dId = ext => state.drivers.find(d => d.ext_id === ext)?.id;
+  const tId = ext => state.teams.find(t => t.ext_id === ext)?.id;
+  const subjExt = q => state.drivers.find(d => d.id === q.subject_driver_id)?.ext_id;
+  const out = {};
+  for (const q of qs) {
+    let v = null, src = "automatisch", note = null;
+    const k = q.auto_key;
+    if (k === "pole") {
+      const r = results.find(x => x.grid === "1");
+      if (r) v = { driver_id: dId(r.Driver.driverId) };
+      else if (quali[0]) { v = { driver_id: dId(quali[0].Driver.driverId) }; src = "voorstel"; note = "P1 in de kwalificatie. De startgrid is nog niet bekend; een gridstraf kan het veranderen."; }
+    } else if (k === "grid_pos") {
+      const ext = subjExt(q);
+      const r = results.find(x => x.Driver.driverId === ext);
+      if (r && Number(r.grid) > 0) v = { position: Number(r.grid) };
+      else if (r) note = "Gestart uit de pitstraat (of niet gestart). Vul zelf in.";
+      else {
+        const qr = quali.find(x => x.Driver.driverId === ext);
+        if (qr) { v = { position: Number(qr.position) }; src = "voorstel"; note = "Positie in de kwalificatie. De startgrid is nog niet bekend."; }
+      }
+    } else if (k === "race_p1" || k === "race_p2" || k === "race_p3") {
+      const r = results.find(x => x.position === k.slice(-1));
+      if (r) v = { driver_id: dId(r.Driver.driverId) };
+    } else if (k === "fastest_lap") {
+      const r = results.find(x => x.FastestLap?.rank === "1");
+      if (r) v = { driver_id: dId(r.Driver.driverId) };
+      else if (results.length) note = "De snelste ronde staat (nog) niet in de uitslag. Vul zelf in.";
+    } else if (k === "first_dnf") {
+      const out_ = results.filter(x => isStarter(x) && !isFinished(x) && !/disqualified/i.test(x.status))
+        .sort((x, y) => Number(x.position) - Number(y.position));
+      const r = out_[out_.length - 1];
+      if (r) { v = { driver_id: dId(r.Driver.driverId) }; src = "voorstel"; note = `Onderaan de uitslag van wie gestart en uitgevallen is (${r.status}, ${r.laps} ronden).`; }
+      else if (results.length) note = "Volgens de uitslag is niemand uitgevallen.";
+    } else if (k === "first_pit_team") {
+      const s = [...stops].sort((x, y) => Number(x.lap) - Number(y.lap) || String(x.time).localeCompare(String(y.time)))[0];
+      if (s) {
+        const r = results.find(x => x.Driver.driverId === s.driverId);
+        const d = state.drivers.find(x => x.ext_id === s.driverId);
+        v = { team_id: r ? tId(r.Constructor.constructorId) : undefined };
+        src = "voorstel";
+        note = `Eerste stop: ${d ? shortName(d) : s.driverId} in ronde ${s.lap} om ${String(s.time).slice(0, 8)} (plaatselijke tijd).`;
+      } else if (results.length) note = "De pitstopgegevens zijn nog niet beschikbaar. Probeer het later opnieuw.";
+    } else if (k === "driver_of_day" || k === "fastest_pit_team" || !k) {
+      note = "Staat niet in de gegevensbron. Zoek het op en vul zelf in.";
+    } else if (k === "race_pos") {
+      const r = results.find(x => x.Driver.driverId === subjExt(q));
+      if (r) {
+        v = { position: Number(r.position) };
+        if (!isFinished(r)) { src = "voorstel"; note = `Niet gefinisht (${r.status}). In de uitslag geklasseerd als P${r.position}.`; }
+      }
+    }
+    if (v && Object.values(v).some(x => x == null || Number.isNaN(x))) {
+      v = null;
+      note = "Coureur of team niet gevonden. Haal de kalender, teams en coureurs opnieuw op.";
+    }
+    out[q.id] = { v, src, note };
+  }
+  return out;
+}
+
+async function deriveSeason(year, qs) {
+  const [cal, ds, cs] = await Promise.all([
+    getJson(`${F1_API}${year}.json?limit=100`),
+    getJson(`${F1_API}${year}/driverStandings.json`),
+    getJson(`${F1_API}${year}/constructorStandings.json`),
+  ]);
+  const total = cal.MRData?.RaceTable?.Races?.length || 0;
+  const dl = ds.MRData?.StandingsTable?.StandingsLists?.[0];
+  const cl = cs.MRData?.StandingsTable?.StandingsLists?.[0];
+  const done = dl && Number(dl.round) === total;
+  const out = {};
+  for (const q of qs) {
+    let v = null, note = null;
+    if (!done) note = `Het seizoen is nog niet afgelopen${dl ? ` (stand na ronde ${dl.round} van ${total})` : ""}.`;
+    else if (q.auto_key === "drivers_champion") {
+      const id = state.drivers.find(d => d.ext_id === dl.DriverStandings?.[0]?.Driver?.driverId)?.id;
+      if (id) v = { driver_id: id };
+    } else if (q.auto_key === "constructors_champion") {
+      const id = state.teams.find(t => t.ext_id === cl?.ConstructorStandings?.[0]?.Constructor?.constructorId)?.id;
+      if (id) v = { team_id: id };
+    }
+    out[q.id] = { v, src: "automatisch", note };
+  }
+  return out;
+}
+
 async function admResults(box) {
   const year = state.season;
   if (!year) { box.innerHTML = `<p class="panel">Er is nog geen seizoen. Voeg dat eerst toe onder Kalender.</p>`; return; }
-  const { data: gps } = await sb.from("grand_prix").select("id, name, round, race_start, status").eq("season", year)
+  const { data: gps } = await sb.from("grand_prix").select("*").eq("season", year)
     .neq("status", "geannuleerd").order("race_start", { ascending: true, nullsFirst: false });
   const list = gps || [];
   const past = list.filter(g => g.race_start && new Date(g.race_start) <= new Date());
@@ -1267,14 +1384,21 @@ async function admResults(box) {
     resultsSel = past.length ? String(past[past.length - 1].id) : list[0] ? String(list[0].id) : "seizoen";
   }
   const sel = resultsSel;
+  const gp = list.find(g => String(g.id) === sel);
   box.innerHTML = `
-    <div class="panel"><label class="field"><span>Uitslag invullen voor</span>
+    <div class="panel stack">
+      <label class="field"><span>Uitslag invullen voor</span>
       <select id="resSel">
         ${list.map(g => `<option value="${g.id}" ${String(g.id) === sel ? "selected" : ""}>${g.round ?? "–"}. ${esc(g.name)} (${fmtDate(g.race_start)})</option>`).join("")}
         <option value="seizoen" ${sel === "seizoen" ? "selected" : ""}>Seizoensvragen ${year}</option>
-      </select></label></div>
+      </select></label>
+      <div class="row wrap" style="justify-content:space-between">
+        <p class="muted small" style="flex:1 1 20rem">Ophalen vult in wat zeker is en doet een voorstel (oranje) waar je zelf naar moet kijken. Een voorstel telt pas mee als je de uitslag opslaat. Wat je zelf hebt ingevuld, wordt nooit overschreven.</p>
+        <button type="button" class="btn ghost" id="fetchRes">Uitslag ophalen</button>
+      </div>
+    </div>
     <div id="resBox">${LOADING}</div>`;
-  $("#resSel").onchange = e => { resultsSel = e.target.value; admResults(box); };
+  $("#resSel").onchange = e => { resultsSel = e.target.value; fetchNotes = {}; admResults(box); };
 
   const base = sb.from("gp_questions").select("*");
   const { data: qs } = await (sel === "seizoen" ? base.eq("season", year) : base.eq("grand_prix_id", Number(sel))).order("sort_order");
@@ -1282,23 +1406,68 @@ async function admResults(box) {
   if (!qs?.length) { rb.innerHTML = `<p class="panel">Hier zijn geen vragen voor.</p>`; return; }
   const { data: ans } = await sb.from("correct_answers").select("*").in("gp_question_id", qs.map(q => q.id));
   const cur = id => (ans || []).find(a => a.gp_question_id === id);
+
+  $("#fetchRes").onclick = async e => {
+    const b = e.target;
+    b.disabled = true;
+    b.textContent = "Bezig met ophalen…";
+    try {
+      const out = sel === "seizoen" ? await deriveSeason(year, qs) : await deriveResults(gp, qs);
+      fetchNotes = Object.fromEntries(Object.entries(out).map(([id, o]) => [id, o.note]));
+      const ids = Object.keys(out).map(Number).filter(id => out[id].v && cur(id)?.source !== "handmatig");
+      if (ids.length) {
+        let { error } = await sb.from("correct_answers").delete().in("gp_question_id", ids).neq("source", "handmatig");
+        if (!error) ({ error } = await sb.from("correct_answers").insert(ids.map(id => ({
+          gp_question_id: id, source: out[id].src, note: out[id].note,
+          driver_id: null, team_id: null, position: null, ...out[id].v,
+        }))));
+        if (error) throw new Error(error.message);
+      }
+      const sure = ids.filter(id => out[id].src === "automatisch").length;
+      const prop = ids.length - sure;
+      toast(ids.length ? `Opgehaald: ${sure} zeker${prop ? `, ${prop} voorstel${prop > 1 ? "len" : ""} om te controleren` : ""}.` : "Er was niets nieuws op te halen.");
+    } catch (err) {
+      toast("Ophalen lukte niet: " + (err.message || err));
+    }
+    admResults(box);
+  };
+
+  const status = a => !a ? `<span class="muted small">Nog leeg</span>`
+    : a.source === "voorstel" ? `<span class="tag prop">Voorstel</span>`
+    : a.source === "automatisch" ? `<span class="tag auto">Opgehaald</span>`
+    : `<span class="muted small">Handmatig</span>`;
   const groups = CATS.map(([k, l]) => ({ l, items: qs.filter(q => q.category === k) })).filter(g => g.items.length);
+  const props = (ans || []).filter(a => a.source === "voorstel").length;
   rb.innerHTML = `<form id="resForm" class="stack">
+    ${props ? `<p class="muted small">${props === 1 ? "Er staat 1 voorstel" : `Er staan ${props} voorstellen`} klaar. Controleer ${props === 1 ? "het" : "ze"} en klik onderaan op <b>Uitslag opslaan</b> om te bevestigen.</p>` : ""}
     ${groups.map(g => `<fieldset class="panel"><legend>${g.l}</legend>
       ${g.items.map(q => {
         const a = cur(q.id);
-        return `<div class="resline">
-          <span>${esc(q.text)}</span>
+        const note = a?.source === "voorstel" ? a.note : fetchNotes[q.id];
+        return `<div class="resline ${a?.source === "voorstel" ? "isprop" : ""}">
+          <span>${esc(q.text)}${note ? `<br><span class="muted small">${esc(note)}</span>` : ""}</span>
           ${answerInput(q, a ? answerValue(q, a) : null, `name="r${q.id}" aria-label="Uitslag: ${esc(q.text)}"`)}
-          <span class="muted small">${a ? (a.source === "automatisch" ? "Automatisch" : "Handmatig") : "Nog leeg"}</span>
+          <span data-tag>${status(a)}</span>
         </div>`;
       }).join("")}
     </fieldset>`).join("")}
     <div class="row wrap" style="justify-content:space-between">
-      <p class="muted small">Laat een vraag leeg zolang de uitslag nog niet bekend is. De punten in de stand worden direct bijgewerkt.</p>
+      <p class="muted small">Laat een vraag leeg zolang de uitslag nog niet bekend is. Na het opslaan worden de punten in de stand direct bijgewerkt.</p>
       <button class="btn">Uitslag opslaan</button>
     </div>
   </form>`;
+  // Direct zien wat je hebt aangepast maar nog niet hebt opgeslagen
+  $("#resForm").oninput = e => {
+    const line = e.target.closest(".resline");
+    if (!line) return;
+    const q = qs.find(x => "r" + x.id === e.target.name);
+    const a = cur(q.id);
+    const v = e.target.value;
+    const unchanged = v ? a && sameAnswer(a, answerRow(q, v)) : !a;
+    line.classList.toggle("isprop", unchanged && a?.source === "voorstel");
+    line.classList.toggle("edited", !unchanged);
+    line.querySelector("[data-tag]").innerHTML = unchanged ? status(a) : `<span class="tag edit">Aangepast</span>`;
+  };
   $("#resForm").onsubmit = async e => {
     e.preventDefault();
     const form = e.target;
@@ -1306,7 +1475,7 @@ async function admResults(box) {
     for (const q of qs) {
       const v = form.elements["r" + q.id].value;
       const a = cur(q.id);
-      const same = v ? a && sameAnswer(a, answerRow(q, v)) : !a;
+      const same = v ? a && a.source !== "voorstel" && sameAnswer(a, answerRow(q, v)) : !a;
       if (same) continue;
       changed.push(q.id);
       if (v) inserts.push({ gp_question_id: q.id, source: "handmatig", ...answerRow(q, v) });
@@ -1315,6 +1484,7 @@ async function admResults(box) {
     let { error } = await sb.from("correct_answers").delete().in("gp_question_id", changed);
     if (!error && inserts.length) ({ error } = await sb.from("correct_answers").insert(inserts));
     if (error) return toast("Opslaan lukte niet: " + error.message);
+    fetchNotes = {};
     toast("Uitslag opgeslagen");
     admResults(box);
   };

@@ -159,7 +159,11 @@ input[type=color] { width: 3rem; padding: .15rem; height: 2.4rem; }
 /* Racelijst */
 .races { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 .races li + li { border-top: 1px solid var(--line); }
-.races a { display: grid; grid-template-columns: 2.4rem 1fr auto; gap: .2rem .6rem; align-items: center; padding: .7rem .9rem; color: var(--ink); text-decoration: none; }
+.races a { display: grid; grid-template-columns: 2.4rem 1fr auto auto; gap: .2rem .6rem; align-items: center; padding: .7rem .9rem; color: var(--ink); text-decoration: none; }
+.races .chk { grid-row: span 2; display: grid; place-items: center; width: 22px; opacity: .85; }
+.next .ok-mark { position: absolute; right: 1rem; bottom: .9rem; opacity: .85; line-height: 0; }
+.next p:last-of-type { padding-right: 2rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .races .rnd { font: 700 1.6rem/1 var(--display); color: var(--muted); grid-row: span 2; }
 .races .nm { font-weight: 600; }
 .races .dt { font-size: .875rem; color: var(--muted); }
@@ -334,7 +338,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-27.4";
+const VERSION = "2026-10-27.5";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -669,6 +673,7 @@ async function renderRaces() {
     html += `<ul class="races"><li><a href="#seizoen/${year}">
       <span class="rnd">${String(year).slice(2)}</span>
       <span class="nm">Seizoensvragen</span>
+      ${checkMark({ filled: seasonFilled, total: seasonQs.length })}
       ${pill(true, false, seasonFilled, seasonQs.length)}
       <span class="dt">Invullen kan tot ${fmtDateTime(seasonRow?.deadline)}</span>
     </a></li></ul>`;
@@ -683,6 +688,7 @@ async function renderRaces() {
         <p>${fmtDate(next.race_start)}. Invullen en wijzigen kan tot ${fmtDateTime(next.closes_at)}${next.closes_at ? `, ${untilText(next.closes_at)}` : ""}.</p>
         <div class="meter"><i style="width:${r.total ? Math.round(r.filled / r.total * 100) : 0}%"></i></div>
         <p>${r.total && r.filled === r.total ? "Alles ingevuld. Je kunt nog wijzigen tot de sluitingstijd." : `${r.filled} van ${r.total} vragen ingevuld`}</p>
+        ${r.total && r.filled === r.total ? `<span class="ok-mark">${CHECK_SVG}</span>` : ""}
       </a>`;
   }
   if (rest.length) {
@@ -691,6 +697,7 @@ async function renderRaces() {
       return `<li><a href="#gp/${g.id}">
         <span class="rnd">${g.round ?? "–"}</span>
         <span class="nm">${esc(g.name)}</span>
+        ${checkMark(r)}
         ${pill(true, false, r?.filled, r?.total)}
         <span class="dt">${fmtDate(g.race_start)}${g.status === "verplaatst" ? ", verplaatst" : ""}</span>
       </a></li>`;
@@ -795,6 +802,15 @@ async function renderWeekend(prefix) {
     </fieldset>`).join("")}
     <a class="btn" href="#gp/${next.id}">Invullen of wijzigen</a>`;
 }
+
+// Subtiel groen vinkje als alles is ingevuld
+const CHECK_SVG = `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+  <defs><linearGradient id="okg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4CBF72"/><stop offset="1" stop-color="#2C8F50"/></linearGradient></defs>
+  <circle cx="12" cy="12" r="11" fill="url(#okg)"/>
+  <path d="M7.2 12.4l3.1 3.1 6.5-6.6" fill="none" stroke="#F4F7F5" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const checkMark = r => r?.total && r.filled === r.total
+  ? `<span class="chk" title="Alles ingevuld">${CHECK_SVG}<span class="sr-only">Alles ingevuld</span></span>`
+  : `<span class="chk"></span>`;
 
 function pill(open, cancelled, filled = 0, total = 0) {
   if (cancelled) return `<span class="pill cancel">Geannuleerd</span>`;

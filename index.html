@@ -356,7 +356,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-27.7";
+const VERSION = "2026-10-27.8";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -703,7 +703,7 @@ async function renderRaces() {
       <a class="next" href="#gp/${next.id}">
         <span class="rnd" aria-hidden="true">${next.round ?? ""}</span>
         <h2>${esc(next.name)}</h2>
-        <p>${fmtDate(next.race_start)}. Invullen en wijzigen kan tot ${fmtDateTime(next.closes_at)}${next.closes_at ? `, ${untilText(next.closes_at)}` : ""}.</p>
+        <p>Race: ${fmtDateTime(next.race_start)}. Invullen en wijzigen kan tot ${fmtDateTime(next.closes_at)}${next.closes_at ? `, ${untilText(next.closes_at)}` : ""}.</p>
         <div class="meter"><i style="width:${r.total ? Math.round(r.filled / r.total * 100) : 0}%"></i></div>
         <p>${r.total && r.filled === r.total ? "Alles ingevuld. Je kunt nog wijzigen tot de sluitingstijd." : `${r.filled} van ${r.total} vragen ingevuld`}</p>
         ${r.total && r.filled === r.total ? `<span class="ok-mark">${CHECK_SVG}</span>` : ""}
@@ -717,7 +717,7 @@ async function renderRaces() {
         <span class="nm">${esc(g.name)}</span>
         ${checkMark(r)}
         ${pill(true, false, r?.filled, r?.total)}
-        <span class="dt">${fmtDate(g.race_start)}${g.status === "verplaatst" ? ", verplaatst" : ""}</span>
+        <span class="dt">${fmtDateTime(g.race_start)}${g.status === "verplaatst" ? ", verplaatst" : ""}</span>
       </a></li>`;
     }).join("")}</ul>`;
   }
@@ -812,6 +812,7 @@ async function renderWeekend(prefix) {
   const groups = CATS.map(([k, l]) => ({ l, items: (qs || []).filter(q => q.category === k) })).filter(g => g.items.length);
   view().innerHTML = prefix + `
     <div><h2 class="gp-title">${esc(next.name)}</h2>
+      ${next.quali_start ? `<p class="muted">Kwalificatie: ${fmtDateTime(next.quali_start)}</p>` : ""}
       <p class="muted">Race: ${fmtDateTime(next.race_start)}</p></div>
     <p class="banner">De voorspellingen van iedereen worden zichtbaar op ${fmtDateTime(next.closes_at)}, zodra het invullen sluit. Hieronder zie je alleen wat jij hebt ingevuld.</p>
     ${groups.map(g => `<fieldset class="panel"><legend>${g.l}</legend>
@@ -880,6 +881,7 @@ async function renderQuestionPage(ctx) {
   let html = (ctx.prefix ?? `<a class="back" href="${open ? "#races" : "#voorspellingen/alle"}">${open ? "Alle races" : "Alle voorspellingen"}</a>`) + `
     <div><h2 class="gp-title">${esc(title)}</h2>
     ${kind === "gp" ? `<p class="muted">${esc([gp.circuit, gp.country].filter(Boolean).join(", "))}</p>
+      ${gp.quali_start ? `<p class="muted">Kwalificatie: ${fmtDateTime(gp.quali_start)}</p>` : ""}
       <p class="muted">Race: ${fmtDateTime(gp.race_start)}</p>` : ""}</div>`;
 
   if (cancelled) html += `<p class="banner red">Deze grand prix is geannuleerd en telt niet mee voor de stand.</p>`;

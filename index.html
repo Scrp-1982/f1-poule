@@ -240,6 +240,30 @@ details.gpe form { margin-top: .75rem; }
 /* Beheer op de computer: breed */
 body.wide main { max-width: 1200px; }
 
+/* Uitslagen invullen */
+.resline { display: grid; grid-template-columns: minmax(0, 1fr) 15rem 6rem; gap: .75rem; align-items: center; padding: .35rem 0; }
+.resline + .resline { border-top: 1px solid var(--line); }
+.resline input, .resline select { padding: .4rem .6rem; }
+@media (max-width: 640px) {
+  .resline { grid-template-columns: minmax(0, 1fr) auto; }
+  .resline > :first-child { grid-column: 1 / -1; }
+}
+
+/* Spelregels */
+.rules p { margin: 0 0 1.1rem; line-height: 1.65; }
+.rules .rh { font: 400 1.05rem var(--text); display: inline-block; border-bottom: 1px solid var(--orange); padding: 0 1rem .1rem 0; margin: .4rem 0 .2rem; }
+.rules .rh b { font-weight: 600; }
+.rtable { overflow-x: auto; margin: .4rem 0 1.4rem; }
+.rtable table { border-collapse: collapse; margin: 0 auto; }
+.rtable th { text-align: left; font-weight: 600; padding: .25rem .6rem; }
+.rtable td { padding: .3rem .6rem; }
+.rtable .blk td { border: 1px solid var(--orange); }
+.rtable .blk td.cat { vertical-align: top; }
+.rtable .num { text-align: center; min-width: 4rem; }
+.rtable .gap td { height: 1.2rem; border: 0; }
+.rtable .sub { padding-top: 0; }
+.prize span:nth-child(odd) { display: inline-block; width: 6rem; }
+
 /* Punten per race */
 .matrix { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 .matrix table { border-collapse: collapse; font-size: .95rem; }
@@ -280,6 +304,7 @@ body.wide main { max-width: 1200px; }
   <a href="#stand" data-tab="stand">Stand</a>
 </nav>
 <nav class="menu" id="menu" hidden>
+  <a href="#spelregels">Spelregels</a>
   <a href="#profiel">Profiel</a>
   <a href="#beheer" id="admMenu" hidden>Beheer</a>
   <button type="button" id="menuLogout">Uitloggen</button>
@@ -290,7 +315,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-26.3";
+const VERSION = "2026-10-26.4";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -525,7 +550,8 @@ function route() {
   if (page === "stand") return renderStand();
   if (page === "voorspellingen") return renderHistory(arg || "weekend");
   if (page === "profiel") return renderProfile();
-  if (page === "beheer" && state.me?.is_admin) return renderAdmin(arg || "deelnemers");
+  if (page === "beheer" && state.me?.is_admin) return renderAdmin(arg || "uitslagen");
+  if (page === "spelregels") return renderRules();
   return renderRaces();
 }
 const setTitle = t => $("#title").textContent = t;
@@ -752,7 +778,6 @@ async function renderSeasonQs(year) {
 async function renderQuestionPage(ctx) {
   const { kind, gp, qs, deadline, cancelled, title } = ctx;
   setTitle(kind === "gp" ? "Grand prix" : "Seizoen");
-  const admin = state.me?.is_admin;
   const ids = qs.map(q => q.id);
   let preds = [], answers = [];
   if (ids.length) {
@@ -785,7 +810,7 @@ async function renderQuestionPage(ctx) {
 
   if (!qs.length) {
     html += `<div class="panel stack"><p>Er zijn ${cancelled ? "voor deze race geen" : "nog geen"} vragen.</p>
-      ${admin && !cancelled ? `<a class="btn" href="#beheer/vragen">Vragen beheren</a>` : ""}</div>`;
+</div>`;
     view().innerHTML = html;
     return;
   }
@@ -796,7 +821,7 @@ async function renderQuestionPage(ctx) {
     html += `<form id="predForm" class="stack">
       ${groups.map(g => `<fieldset class="panel"><legend>${g.l}</legend>
         ${g.items.map(q => `<label class="q">
-          <span>${esc(q.text)}</span><span class="pt">${q.points} pt</span>
+          <span>${esc(q.text)}</span>
           ${answerInput(q, answerValue(q, mine[q.id]), `name="q${q.id}" aria-label="Antwoord"`)}
         </label>`).join("")}
       </fieldset>`).join("")}
@@ -854,17 +879,15 @@ async function renderQuestionPage(ctx) {
   html += groups.map(g => `<h3>${g.l}</h3>` + g.items.map(q => {
     const correct = correctFor(q.id);
     return `<div class="panel qres">
-      <div class="qhead"><span>${esc(q.text)}</span><span class="pt">${q.points} pt</span></div>
+      <div class="qhead"><span>${esc(q.text)}</span></div>
       <div class="mine">
         <span class="muted small">Jij</span>
         <span>${mine[q.id] ? esc(answerLabel(q, mine[q.id])) : `<span class="muted">niet ingevuld</span>`}</span>
         <span class="gain ${correct.length && !(mine[q.id] && isRight(q, mine[q.id])) ? "zero" : ""}">${!correct.length ? "" : mine[q.id] && isRight(q, mine[q.id]) ? "+" + q.points : "0"}</span>
       </div>
       <div class="chips"><span class="muted small">Uitslag</span>${correct.length
-        ? correct.map(a => `<span class="chip">${esc(answerLabel(q, a))}${a.source === "automatisch" ? ` <span class="small">(automatisch)</span>` : ""}${admin ? `<button type="button" data-del-ans="${a.id}" aria-label="Antwoord verwijderen">×</button>` : ""}</span>`).join("")
+        ? correct.map(a => `<span class="chip">${esc(answerLabel(q, a))}${a.source === "automatisch" ? ` <span class="small">(automatisch)</span>` : ""}</span>`).join("")
         : `<span class="muted">Nog geen uitslag</span>`}</div>
-      ${admin ? `<div class="addans">${answerInput(q, null, `data-ans-sel="${q.id}" aria-label="Juist antwoord"`)}
-        <button type="button" class="btn ghost small" data-add-ans="${q.id}">Toevoegen</button></div>` : ""}
       <ul class="picks">${others.map(pr => {
         const p = preds.find(x => x.gp_question_id === q.id && x.user_id === pr.id);
         if (!p) return `<li class="muted"><span>${esc(pr.display_name)}</span><span>niet ingevuld</span><span></span></li>`;
@@ -875,25 +898,6 @@ async function renderQuestionPage(ctx) {
   }).join("")).join("");
   view().innerHTML = html;
 
-  if (admin) view().onclick = async e => {
-    const del = e.target.closest("[data-del-ans]");
-    const add = e.target.closest("[data-add-ans]");
-    if (del) {
-      const { error } = await sb.from("correct_answers").delete().eq("id", Number(del.dataset.delAns));
-      if (error) return toast("Verwijderen lukte niet: " + error.message);
-      toast("Antwoord verwijderd");
-      route();
-    } else if (add) {
-      const q = qs.find(x => x.id === Number(add.dataset.addAns));
-      const v = view().querySelector(`[data-ans-sel="${q.id}"]`).value;
-      if (!v) return toast("Kies eerst een antwoord.");
-      if (q.answer_type === "positie" && !(Number(v) >= 1 && Number(v) <= POSITIONS)) return toast(`Vul een positie van 1 tot en met ${POSITIONS} in.`);
-      const { error } = await sb.from("correct_answers").insert({ gp_question_id: q.id, source: "handmatig", ...answerRow(q, v) });
-      if (error) return toast("Opslaan lukte niet: " + error.message);
-      toast("Antwoord opgeslagen");
-      route();
-    }
-  };
 }
 
 // ---------------------------------------------------------------------
@@ -993,15 +997,124 @@ function renderProfile() {
 // ---------------------------------------------------------------------
 async function renderAdmin(sub) {
   setTitle("Beheer");
-  const subs = [["deelnemers", "Deelnemers"], ["kalender", "Kalender"], ["vragen", "Vragen"], ["coureurs", "Coureurs"]];
+  const subs = [["uitslagen", "Uitslagen"], ["kalender", "Kalender"], ["vragen", "Vragen"], ["coureurs", "Coureurs"], ["deelnemers", "Deelnemers"]];
   view().onclick = null;
   view().innerHTML = `<nav class="seg">${subs.map(([k, l]) => `<a href="#beheer/${k}" class="${k === sub ? "on" : ""}">${l}</a>`).join("")}</nav>
     <div id="adm" class="stack">${LOADING}</div>`;
   const box = $("#adm");
+  if (sub === "uitslagen") return admResults(box);
   if (sub === "kalender") return admCalendar(box);
   if (sub === "vragen") return admQuestions(box);
   if (sub === "coureurs") return admDrivers(box);
   return admPeople(box);
+}
+
+// Uitslagen per grand prix invullen
+let resultsSel = null;
+async function admResults(box) {
+  const year = state.season;
+  if (!year) { box.innerHTML = `<p class="panel">Er is nog geen seizoen. Voeg dat eerst toe onder Kalender.</p>`; return; }
+  const { data: gps } = await sb.from("grand_prix").select("id, name, round, race_start, status").eq("season", year)
+    .neq("status", "geannuleerd").order("race_start", { ascending: true, nullsFirst: false });
+  const list = gps || [];
+  const past = list.filter(g => g.race_start && new Date(g.race_start) <= new Date());
+  if (!resultsSel || (resultsSel !== "seizoen" && !list.some(g => String(g.id) === resultsSel))) {
+    resultsSel = past.length ? String(past[past.length - 1].id) : list[0] ? String(list[0].id) : "seizoen";
+  }
+  const sel = resultsSel;
+  box.innerHTML = `
+    <div class="panel"><label class="field"><span>Uitslag invullen voor</span>
+      <select id="resSel">
+        ${list.map(g => `<option value="${g.id}" ${String(g.id) === sel ? "selected" : ""}>${g.round ?? "–"}. ${esc(g.name)} (${fmtDate(g.race_start)})</option>`).join("")}
+        <option value="seizoen" ${sel === "seizoen" ? "selected" : ""}>Seizoensvragen ${year}</option>
+      </select></label></div>
+    <div id="resBox">${LOADING}</div>`;
+  $("#resSel").onchange = e => { resultsSel = e.target.value; admResults(box); };
+
+  const base = sb.from("gp_questions").select("*");
+  const { data: qs } = await (sel === "seizoen" ? base.eq("season", year) : base.eq("grand_prix_id", Number(sel))).order("sort_order");
+  const rb = $("#resBox");
+  if (!qs?.length) { rb.innerHTML = `<p class="panel">Hier zijn geen vragen voor.</p>`; return; }
+  const { data: ans } = await sb.from("correct_answers").select("*").in("gp_question_id", qs.map(q => q.id));
+  const cur = id => (ans || []).find(a => a.gp_question_id === id);
+  const groups = CATS.map(([k, l]) => ({ l, items: qs.filter(q => q.category === k) })).filter(g => g.items.length);
+  rb.innerHTML = `<form id="resForm" class="stack">
+    ${groups.map(g => `<fieldset class="panel"><legend>${g.l}</legend>
+      ${g.items.map(q => {
+        const a = cur(q.id);
+        return `<div class="resline">
+          <span>${esc(q.text)}</span>
+          ${answerInput(q, a ? answerValue(q, a) : null, `name="r${q.id}" aria-label="Uitslag: ${esc(q.text)}"`)}
+          <span class="muted small">${a ? (a.source === "automatisch" ? "Automatisch" : "Handmatig") : "Nog leeg"}</span>
+        </div>`;
+      }).join("")}
+    </fieldset>`).join("")}
+    <div class="row wrap" style="justify-content:space-between">
+      <p class="muted small">Laat een vraag leeg zolang de uitslag nog niet bekend is. De punten in de stand worden direct bijgewerkt.</p>
+      <button class="btn">Uitslag opslaan</button>
+    </div>
+  </form>`;
+  $("#resForm").onsubmit = async e => {
+    e.preventDefault();
+    const form = e.target;
+    const changed = [], inserts = [];
+    for (const q of qs) {
+      const v = form.elements["r" + q.id].value;
+      const a = cur(q.id);
+      const same = v ? a && sameAnswer(a, answerRow(q, v)) : !a;
+      if (same) continue;
+      changed.push(q.id);
+      if (v) inserts.push({ gp_question_id: q.id, source: "handmatig", ...answerRow(q, v) });
+    }
+    if (!changed.length) return toast("Er was niets gewijzigd");
+    let { error } = await sb.from("correct_answers").delete().in("gp_question_id", changed);
+    if (!error && inserts.length) ({ error } = await sb.from("correct_answers").insert(inserts));
+    if (error) return toast("Opslaan lukte niet: " + error.message);
+    toast("Uitslag opgeslagen");
+    admResults(box);
+  };
+}
+
+// Spelregels (de punten komen uit de vragenlijst in Beheer)
+async function renderRules() {
+  setTitle("Spelregels");
+  setTab(null);
+  view().innerHTML = LOADING;
+  const { data } = await sb.from("questions").select("text, category, points, sort_order").eq("active", true).order("sort_order");
+  const qs = data || [];
+  const block = (label, cat) => {
+    const items = qs.filter(q => q.category === cat);
+    if (!items.length) return "";
+    return `<tbody class="blk">${items.map((q, i) => `<tr>
+      ${i === 0 ? `<td class="cat" rowspan="${items.length}">${label}</td>` : ""}
+      <td>${esc(q.text)}</td><td class="num">${q.points}</td></tr>`).join("")}</tbody>`;
+  };
+  view().innerHTML = `<article class="rules">
+    <h3 class="rh"><b>Algemeen:</b></h3>
+    <p>Voor elke GP dienen de antwoorden de donderdag voor de start van de GP ingevuld te zijn.<br>
+    De antwoorden voor de volgende GP kunnen op maandag na de gereden GP al ingevuld worden.<br>
+    Dit houdt in dat je minimaal 3 dagen de tijd hebt om deze in te vullen.<br>
+    Voor aanvang van het seizoen kunnen de vragen met betrekking tot de kampioen en constructeurstitel worden ingevuld. Deze vragen zullen vervolgens niet meer zichtbaar zijn in de invulsheet.<br>
+    De uitslagen kunnen na de race aangepast worden aan de hand van de uitslagen van GPupdate.net</p>
+    <p>De eerste Grandprix vindt plaats op 08 March 2026.<br>
+    De eerste antwoorden moeten dus voor donderdag 05 March 2026 Ingevuld worden.</p>
+    <h3 class="rh">Eerste uitvaller:</h3>
+    <p>Het kan voorkomen dat er een crash plaatsvindt waarbij meerdere coureurs tegelijk uitvallen.<br>
+    Wanneer dat gebeurt, dan zal de coureur die onderaan staat bij de uitslag als eerste uitvaller genoteerd worden. De uitslag van GPupdate.net zal leidend zijn.</p>
+    <h3 class="rh"><b>De puntentelling:</b></h3>
+    <div class="rtable"><table>
+      <thead><tr><th></th><th>Per grandprix</th><th class="num">Punten</th></tr></thead>
+      ${block("Kwalificatie", "kwalificatie")}
+      <tbody class="gap"><tr><td colspan="3"></td></tr></tbody>
+      ${block("Race", "race")}
+      <tbody class="gap"><tr><td colspan="3"></td></tr></tbody>
+      <tbody><tr><td></td><td class="sub">Per seizoen</td><td></td></tr></tbody>
+      ${block("Seizoen", "seizoen")}
+    </table></div>
+    <h3 class="rh">Inleg:</h3>
+    <p>De inleg bedraagt €10,- en zal als volgt verdeeld worden.</p>
+    <p class="prize"><span>1e prijs</span><span>€35,-</span><br><span>2e prijs</span><span>€15,-</span></p>
+  </article>`;
 }
 
 // Deelnemers en uitnodigingen

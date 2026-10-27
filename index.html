@@ -270,6 +270,9 @@ body.wide main { max-width: 1200px; }
 .rtable .sub { padding-top: 0; }
 .prize span:nth-child(odd) { display: inline-block; width: 6rem; }
 
+.ntline { display: grid; grid-template-columns: auto 1fr 8rem; gap: .75rem; align-items: end; }
+@media (max-width: 640px) { .ntline { grid-template-columns: 1fr 1fr; } .ntline .check { grid-column: 1 / -1; } }
+
 /* Punten per race */
 .matrix { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 .matrix table { border-collapse: collapse; font-size: .95rem; }
@@ -321,11 +324,12 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-26.6";
+const VERSION = "2026-10-27.1";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
 const F1_API = "https://api.jolpi.ca/ergast/f1/";
+const VAPID_PUBLIC_KEY = "BF_s9LiKjj_7pKjUnVZmtxBD5dJXCWTRrm-u2t2ABE-Kezirc8PCfRM-Oryhord0b8LFh8z61LNH2r4Bfa2gH4Y";
 const POSITIONS = 22;
 
 const TEAM_COLORS = {
@@ -337,7 +341,7 @@ const CATS = [["kwalificatie", "Kwalificatie"], ["race", "Race"], ["seizoen", "S
 const FIELD = { coureur: "driver_id", team: "team_id", positie: "position" };
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-const state = { user: null, me: null, season: null, seasons: [], teams: [], drivers: [], lineup: [], profiles: [] };
+const state = { user: null, me: null, aal: "aal1", season: null, seasons: [], teams: [], drivers: [], lineup: [], profiles: [] };
 
 // ---------------------------------------------------------------------
 // Hulpfuncties
@@ -441,6 +445,33 @@ function authError(err) {
   return "Dat lukte niet: " + m;
 }
 
+function renderMfaPrompt(user) {
+  $("#tabs").hidden = true;
+  $("#menuBtn").hidden = true;
+  setTitle("F1 Poule");
+  view().innerHTML = `
+    <section class="auth">
+      <div class="brand"><h2>Tweestapsverificatie</h2>
+        <p class="muted">Vul de code van 6 cijfers uit je authenticator-app in.</p></div>
+      <form id="mfaForm" class="panel stack">
+        <label class="field"><span>Code</span><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required autofocus></label>
+        <button class="btn">Bevestigen</button>
+        <button type="button" class="btn ghost" id="mfaCancel">Uitloggen</button>
+      </form>
+    </section>`;
+  $("#mfaForm").onsubmit = async e => {
+    e.preventDefault();
+    const code = String(new FormData(e.target).get("code")).trim();
+    const { data: f } = await sb.auth.mfa.listFactors();
+    const totp = f?.totp?.[0];
+    if (!totp) return toast("Er is geen authenticator gekoppeld.");
+    const { error } = await sb.auth.mfa.challengeAndVerify({ factorId: totp.id, code });
+    if (error) return toast("De code klopt niet. Probeer het opnieuw.");
+    afterLogin(user);
+  };
+  $("#mfaCancel").onclick = () => sb.auth.signOut();
+}
+
 function renderAuth(mode = "login") {
   $("#tabs").hidden = true;
   $("#menuBtn").hidden = true;
@@ -486,6 +517,9 @@ function renderAuth(mode = "login") {
 }
 
 async function afterLogin(user) {
+  const { data: aal } = await sb.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal && aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") return renderMfaPrompt(user);
+  state.aal = aal?.currentLevel || "aal1";
   state.user = user;
   view().innerHTML = LOADING;
   const { data: me } = await sb.from("profiles").select("*").eq("id", user.id).single();
@@ -971,6 +1005,8 @@ function renderProfile() {
       <label class="field"><span>Nog een keer</span><input name="pw2" type="password" minlength="8" required autocomplete="new-password"></label>
       <button class="btn">Wachtwoord wijzigen</button>
     </form>
+    <div class="panel stack" id="pushPanel">${LOADING}</div>
+    <div class="panel stack" id="mfaPanel">${LOADING}</div>
     <div class="panel stack">
       <p class="muted small">Ingelogd als ${esc(state.user.email)}</p>
       <button class="btn ghost" id="logout" type="button">Uitloggen</button>
@@ -996,6 +1032,112 @@ function renderProfile() {
     toast("Wachtwoord gewijzigd");
   };
   $("#logout").onclick = () => sb.auth.signOut();
+  pushPanel($("#pushPanel"));
+  mfaPanel($("#mfaPanel"));
+}
+
+// Meldingen op dit apparaat
+const b64uToBytes = s => {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0));
+};
+async function pushPanel(el) {
+  const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  if (!supported) {
+    el.innerHTML = `<h3>Meldingen</h3><p class="muted">Op dit apparaat kunnen geen meldingen worden aangezet. Op een iPhone werkt het alleen als je de app via Zet op beginscherm hebt toegevoegd en via het icoon opent.</p>`;
+    return;
+  }
+  if (Notification.permission === "denied") {
+    el.innerHTML = `<h3>Meldingen</h3><p class="muted">Meldingen zijn geblokkeerd. Zet ze aan in de instellingen van je telefoon (op de iPhone: Instellingen, Berichtgeving, F1 Poule) en open de app opnieuw.</p>`;
+    return;
+  }
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  if (sub) {
+    const j = sub.toJSON();
+    sb.rpc("save_push_subscription", { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth });
+    el.innerHTML = `<h3>Meldingen</h3>
+      <p>Meldingen staan aan op dit apparaat. Je krijgt een melding als er een race aankomt en als je je voorspelling nog niet hebt ingevuld.</p>
+      <div class="row wrap"><button type="button" class="btn ghost" id="pushTest">Testmelding sturen</button>
+      <button type="button" class="btn ghost" id="pushOff">Uitzetten</button></div>`;
+    $("#pushTest").onclick = async () => {
+      const { data, error } = await sb.rpc("send_test_push");
+      toast(error ? "Versturen lukte niet: " + error.message : data ? "Testmelding verstuurd. Hij komt binnen een minuut binnen." : "Dit apparaat is nog niet aangemeld.");
+    };
+    $("#pushOff").onclick = async () => {
+      await sb.rpc("delete_push_subscription", { p_endpoint: sub.endpoint });
+      await sub.unsubscribe();
+      toast("Meldingen staan uit op dit apparaat");
+      pushPanel(el);
+    };
+    return;
+  }
+  el.innerHTML = `<h3>Meldingen</h3>
+    <p class="muted">Krijg een melding als er een race aankomt en als je je voorspelling nog niet hebt ingevuld.</p>
+    <button type="button" class="btn" id="pushOn">Meldingen aanzetten</button>`;
+  $("#pushOn").onclick = async () => {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") return toast("Zonder toestemming kunnen er geen meldingen komen.");
+    try {
+      const s = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(VAPID_PUBLIC_KEY) });
+      const j = s.toJSON();
+      const { error } = await sb.rpc("save_push_subscription", { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth });
+      if (error) return toast("Aanmelden lukte niet: " + error.message);
+      toast("Meldingen staan aan");
+    } catch (err) {
+      toast("Aanzetten lukte niet: " + (err.message || err));
+    }
+    pushPanel(el);
+  };
+}
+
+// Tweestapsverificatie
+async function mfaPanel(el) {
+  const { data } = await sb.auth.mfa.listFactors();
+  const verified = data?.totp?.[0];
+  const admin = state.me?.is_admin;
+  if (verified) {
+    el.innerHTML = `<h3>Tweestapsverificatie</h3>
+      <p>Staat aan. Bij het inloggen vraagt de app om een code uit je authenticator-app.</p>
+      ${admin ? `<p class="muted small">Als beheerder heb je dit nodig voor Beheer. Zet je het uit, dan kun je niet meer bij Beheer.</p>` : ""}
+      <button type="button" class="btn ghost" id="mfaOff">Uitzetten</button>`;
+    $("#mfaOff").onclick = async () => {
+      if (!confirm(`Tweestapsverificatie uitzetten?${admin ? " Je kunt dan niet meer bij Beheer." : ""}`)) return;
+      const { error } = await sb.auth.mfa.unenroll({ factorId: verified.id });
+      if (error) return toast("Uitzetten lukte niet: " + error.message);
+      await sb.auth.refreshSession();
+      state.aal = "aal1";
+      toast("Tweestapsverificatie staat uit");
+      mfaPanel(el);
+    };
+    return;
+  }
+  el.innerHTML = `<h3>Tweestapsverificatie</h3>
+    <p class="muted">Extra beveiliging: bij het inloggen vul je ook een code in uit een authenticator-app, zoals de iPhone-app Wachtwoorden.${admin ? " Voor beheerders is dit verplicht." : ""}</p>
+    <button type="button" class="btn" id="mfaOn">Aanzetten</button>`;
+  $("#mfaOn").onclick = async () => {
+    for (const f of (data?.all || []).filter(f => f.status !== "verified")) await sb.auth.mfa.unenroll({ factorId: f.id });
+    const { data: en, error } = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "F1 Poule " + Date.now(), issuer: "F1 Poule" });
+    if (error) return toast("Aanzetten lukte niet: " + error.message);
+    el.innerHTML = `<h3>Tweestapsverificatie</h3>
+      <p>1. Scan deze QR-code met je authenticator-app. Op de iPhone kan dat met de camera; kies daarna de app Wachtwoorden.</p>
+      <img src="${en.totp.qr_code}" alt="QR-code voor tweestapsverificatie" style="width:200px;height:200px;background:#fff;padding:8px;border-radius:8px">
+      <p class="muted small">Lukt scannen niet? Vul dan deze sleutel handmatig in: <code style="word-break:break-all">${esc(en.totp.secret)}</code></p>
+      <form id="mfaVerify" class="stack">
+        <label class="field"><span>2. Vul de code van 6 cijfers in</span><input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required></label>
+        <button class="btn">Bevestigen</button>
+      </form>`;
+    $("#mfaVerify").onsubmit = async e => {
+      e.preventDefault();
+      const code = String(new FormData(e.target).get("code")).trim();
+      const { error } = await sb.auth.mfa.challengeAndVerify({ factorId: en.id, code });
+      if (error) return toast("De code klopt niet. Probeer het opnieuw.");
+      state.aal = "aal2";
+      toast("Tweestapsverificatie staat aan");
+      mfaPanel(el);
+    };
+  };
 }
 
 // ---------------------------------------------------------------------
@@ -1003,12 +1145,19 @@ function renderProfile() {
 // ---------------------------------------------------------------------
 async function renderAdmin(sub) {
   setTitle("Beheer");
-  const subs = [["uitslagen", "Uitslagen"], ["kalender", "Kalender"], ["vragen", "Vragen"], ["coureurs", "Coureurs"], ["deelnemers", "Deelnemers"]];
+  if (state.aal !== "aal2") {
+    view().innerHTML = `<div class="panel stack"><h3>Tweestapsverificatie nodig</h3>
+      <p>Beheer is alleen te gebruiken met tweestapsverificatie. Zet die aan via het menu, bij Profiel. Heb je hem al aan, log dan opnieuw in met je code.</p>
+      <a class="btn" href="#profiel">Naar Profiel</a></div>`;
+    return;
+  }
+  const subs = [["uitslagen", "Uitslagen"], ["kalender", "Kalender"], ["vragen", "Vragen"], ["coureurs", "Coureurs"], ["deelnemers", "Deelnemers"], ["meldingen", "Meldingen"]];
   view().onclick = null;
   view().innerHTML = `<nav class="seg">${subs.map(([k, l]) => `<a href="#beheer/${k}" class="${k === sub ? "on" : ""}">${l}</a>`).join("")}</nav>
     <div id="adm" class="stack">${LOADING}</div>`;
   const box = $("#adm");
   if (sub === "uitslagen") return admResults(box);
+  if (sub === "meldingen") return admNotifications(box);
   if (sub === "kalender") return admCalendar(box);
   if (sub === "vragen") return admQuestions(box);
   if (sub === "coureurs") return admDrivers(box);
@@ -1125,7 +1274,11 @@ async function renderRules() {
 
 // Deelnemers en uitnodigingen
 async function admPeople(box) {
-  const { data: inv } = await sb.from("invites").select("*").order("created_at", { ascending: false });
+  const [{ data: inv }, { data: mfa }] = await Promise.all([
+    sb.from("invites").select("*").order("created_at", { ascending: false }),
+    sb.rpc("admin_mfa_status"),
+  ]);
+  const hasMfa = new Set((mfa || []).filter(r => r.has_mfa).map(r => r.uid));
   const open = (inv || []).filter(i => !i.accepted_at);
   box.innerHTML = `
     <form class="panel stack" id="invForm">
@@ -1138,7 +1291,11 @@ async function admPeople(box) {
       <span>${esc(i.email)}<br><span class="muted small">Uitgenodigd op ${fmtDate(i.created_at)}</span></span>
       <button type="button" class="btn ghost small" data-revoke="${esc(i.email)}">Intrekken</button></li>`).join("")}</ul></div>` : ""}
     <div class="panel"><h3>Deelnemers</h3><ul class="list">${state.profiles.map(p => `<li>
-      <span>${esc(p.display_name)}${p.is_admin ? ` <span class="muted small">(beheerder)</span>` : ""}</span></li>`).join("")}</ul></div>`;
+      <span>${esc(p.display_name)}${p.is_admin ? ` <span class="muted small">(beheerder)</span>` : ""}<br>
+        <span class="muted small">Tweestap ${hasMfa.has(p.id) ? "aan" : "uit"}</span></span>
+      ${hasMfa.has(p.id) && p.id !== state.user.id ? `<button type="button" class="btn ghost small" data-reset-mfa="${p.id}">Tweestap uitzetten</button>` : ""}
+    </li>`).join("")}</ul>
+    <p class="muted small" style="margin-top:.6rem">Telefoon kwijt? Zet hier de tweestapsverificatie van die persoon uit. Daarna kan diegene inloggen met alleen het wachtwoord en het opnieuw instellen.</p></div>`;
 
   $("#invForm").onsubmit = async e => {
     e.preventDefault();
@@ -1153,6 +1310,15 @@ async function admPeople(box) {
     setTimeout(() => admPeople(box), 600);
   };
   box.onclick = async e => {
+    const r = e.target.closest("[data-reset-mfa]");
+    if (r) {
+      const p = state.profiles.find(x => x.id === r.dataset.resetMfa);
+      if (!confirm(`Tweestapsverificatie uitzetten voor ${p?.display_name}?`)) return;
+      const { error } = await sb.rpc("admin_reset_mfa", { target: r.dataset.resetMfa });
+      if (error) return toast("Uitzetten lukte niet: " + error.message);
+      toast("Tweestapsverificatie uitgezet");
+      return admPeople(box);
+    }
     const b = e.target.closest("[data-revoke]");
     if (!b) return;
     if (!confirm(`Uitnodiging voor ${b.dataset.revoke} intrekken? Diegene kan dan geen account meer maken.`)) return;
@@ -1160,6 +1326,62 @@ async function admPeople(box) {
     if (error) return toast("Intrekken lukte niet: " + error.message);
     toast("Uitnodiging ingetrokken");
     admPeople(box);
+  };
+}
+
+// Meldingen: wanneer en welke tekst
+async function admNotifications(box) {
+  const [{ data: st }, { data: log }, { data: next }] = await Promise.all([
+    sb.from("notification_settings").select("*").order("kind"),
+    sb.from("notification_log").select("*, grand_prix(name)").order("sent_at", { ascending: false }).limit(8),
+    sb.from("grand_prix").select("id, name, closes_at").neq("status", "geannuleerd")
+      .gt("closes_at", new Date().toISOString()).order("closes_at").limit(1),
+  ]);
+  if (!st?.length) { box.innerHTML = `<p class="panel">De meldingen zijn nog niet ingesteld. Draai eerst het SQL-script voor de meldingen.</p>`; return; }
+  const DAYS = [[1, "Maandag"], [2, "Dinsdag"], [3, "Woensdag"], [4, "Donderdag"]];
+  const LABEL = { aankondiging: "Er komt een race aan (naar iedereen)", herinnering: "Herinnering (alleen wie nog niet alles heeft ingevuld)" };
+  const g = next?.[0];
+  const dueOf = s => {
+    const d = new Date(g.closes_at);
+    d.setDate(d.getDate() - (5 - s.weekday));
+    const [h, m] = s.at_time.split(":");
+    d.setHours(Number(h), Number(m), 0, 0);
+    return d;
+  };
+  box.innerHTML = `<form id="ntForm" class="stack">
+    ${st.map(s => `<fieldset class="panel stack"><legend>${LABEL[s.kind] || s.kind}</legend>
+      <div class="ntline">
+        <label class="check"><input type="checkbox" name="en_${s.kind}" ${s.enabled ? "checked" : ""}> Aan</label>
+        <label class="field"><span>Dag in de raceweek</span><select name="day_${s.kind}">${DAYS.map(([v, l]) => `<option value="${v}" ${v === s.weekday ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label class="field"><span>Tijd</span><input type="time" name="time_${s.kind}" value="${s.at_time.slice(0, 5)}" required></label>
+      </div>
+      <label class="field"><span>Titel</span><input name="title_${s.kind}" value="${esc(s.title)}" required maxlength="60"></label>
+      <label class="field"><span>Tekst (${"{race}"} wordt de naam van de race)</span><input name="body_${s.kind}" value="${esc(s.body)}" required maxlength="160"></label>
+      ${g && s.enabled ? `<p class="muted small">Volgende keer: ${fmtDateTime(dueOf(s))}, voor ${esc(g.name)}.</p>` : ""}
+    </fieldset>`).join("")}
+    <div class="row wrap" style="justify-content:space-between">
+      <p class="muted small">De dag is die in de week van het raceweekend. Het invullen blijft sluiten in de nacht van donderdag op vrijdag om 01:00.</p>
+      <button class="btn">Opslaan</button>
+    </div>
+  </form>
+  ${log?.length ? `<div class="panel"><h3>Laatst verstuurd</h3><ul class="list">${log.map(l => `<li>
+    <span>${esc(l.grand_prix?.name || "")}: ${l.kind}<br><span class="muted small">${fmtDateTime(l.sent_at)}</span></span>
+    <span class="muted small">${l.recipients} apparaten</span></li>`).join("")}</ul></div>` : ""}`;
+  $("#ntForm").onsubmit = async e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    for (const s of st) {
+      const { error } = await sb.from("notification_settings").update({
+        enabled: f.get("en_" + s.kind) === "on",
+        weekday: Number(f.get("day_" + s.kind)),
+        at_time: f.get("time_" + s.kind),
+        title: String(f.get("title_" + s.kind)).trim(),
+        body: String(f.get("body_" + s.kind)).trim(),
+      }).eq("kind", s.kind);
+      if (error) return toast("Opslaan lukte niet: " + error.message);
+    }
+    toast("Meldingen opgeslagen");
+    admNotifications(box);
   };
 }
 
@@ -1578,6 +1800,7 @@ function admDrivers(box) {
   };
 }
 
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 init();
 </script>
 </body>

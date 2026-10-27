@@ -324,7 +324,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-27.1";
+const VERSION = "2026-10-27.2";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -1063,7 +1063,7 @@ async function pushPanel(el) {
       <button type="button" class="btn ghost" id="pushOff">Uitzetten</button></div>`;
     $("#pushTest").onclick = async () => {
       const { data, error } = await sb.rpc("send_test_push");
-      toast(error ? "Versturen lukte niet: " + error.message : data ? "Testmelding verstuurd. Hij komt binnen een minuut binnen." : "Dit apparaat is nog niet aangemeld.");
+      toast(error ? "Versturen lukte niet: " + error.message : data ? "De testmelding komt over ongeveer een minuut. Sluit de app, dan zie je hem binnenkomen." : "Dit apparaat is nog niet aangemeld.");
     };
     $("#pushOff").onclick = async () => {
       await sb.rpc("delete_push_subscription", { p_endpoint: sub.endpoint });

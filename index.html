@@ -225,6 +225,16 @@ details.gpe summary { cursor: pointer; font-weight: 600; }
 details.gpe form { margin-top: .75rem; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .check { display: flex; gap: .5rem; align-items: center; }
+details.fold > summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: .6rem;
+  font: 600 1.3rem var(--display);
+}
+details.fold > summary::-webkit-details-marker { display: none; }
+details.fold > summary .state { margin-left: auto; font: 400 .9rem var(--text); color: var(--muted); }
+details.fold > summary::after { content: "▾"; color: var(--orange); transition: transform .15s; }
+details.fold[open] > summary::after { transform: rotate(180deg); }
+details.fold[open] > summary { margin-bottom: .9rem; }
+@media (prefers-reduced-motion: reduce) { details.fold > summary::after { transition: none; } }
 
 /* Vragen beheren */
 .qhdr, .qline { display: grid; grid-template-columns: minmax(0, 1fr) 12rem 4.5rem 6.5rem; gap: .5rem; align-items: center; }
@@ -324,7 +334,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-27.3";
+const VERSION = "2026-10-27.4";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -993,20 +1003,31 @@ async function renderStand() {
 // ---------------------------------------------------------------------
 function renderProfile() {
   setTitle("Profiel");
+  setTab(null);
   view().innerHTML = `
-    <form class="panel stack" id="nameForm">
-      <h3>Je naam</h3>
-      <label class="field"><span>Naam in de poule</span><input name="name" required maxlength="40" value="${esc(state.me?.display_name)}"></label>
-      <button class="btn">Naam opslaan</button>
-    </form>
-    <form class="panel stack" id="pwForm">
-      <h3>Wachtwoord wijzigen</h3>
-      <label class="field"><span>Nieuw wachtwoord</span><input name="pw" type="password" minlength="8" required autocomplete="new-password"></label>
-      <label class="field"><span>Nog een keer</span><input name="pw2" type="password" minlength="8" required autocomplete="new-password"></label>
-      <button class="btn">Wachtwoord wijzigen</button>
-    </form>
-    <div class="panel stack" id="pushPanel">${LOADING}</div>
-    <div class="panel stack" id="mfaPanel">${LOADING}</div>
+    <details class="panel fold">
+      <summary>Je naam <span class="state">${esc(state.me?.display_name)}</span></summary>
+      <form class="stack" id="nameForm">
+        <label class="field"><span>Naam in de poule</span><input name="name" required maxlength="40" value="${esc(state.me?.display_name)}"></label>
+        <button class="btn">Naam opslaan</button>
+      </form>
+    </details>
+    <details class="panel fold">
+      <summary>Wachtwoord wijzigen <span class="state"></span></summary>
+      <form class="stack" id="pwForm">
+        <label class="field"><span>Nieuw wachtwoord</span><input name="pw" type="password" minlength="8" required autocomplete="new-password"></label>
+        <label class="field"><span>Nog een keer</span><input name="pw2" type="password" minlength="8" required autocomplete="new-password"></label>
+        <button class="btn">Wachtwoord wijzigen</button>
+      </form>
+    </details>
+    <details class="panel fold">
+      <summary>Meldingen <span class="state" id="pushState"></span></summary>
+      <div class="stack" id="pushPanel">${LOADING}</div>
+    </details>
+    <details class="panel fold">
+      <summary>Tweestapsverificatie <span class="state" id="mfaState"></span></summary>
+      <div class="stack" id="mfaPanel">${LOADING}</div>
+    </details>
     <div class="panel stack">
       <p class="muted small">Ingelogd als ${esc(state.user.email)}</p>
       <button class="btn ghost" id="logout" type="button">Uitloggen</button>
@@ -1045,19 +1066,21 @@ const b64uToBytes = s => {
 async function pushPanel(el) {
   const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
   if (!supported) {
-    el.innerHTML = `<h3>Meldingen</h3><p class="muted">Op dit apparaat kunnen geen meldingen worden aangezet. Op een iPhone werkt het alleen als je de app via Zet op beginscherm hebt toegevoegd en via het icoon opent.</p>`;
+    el.innerHTML = `<p class="muted">Op dit apparaat kunnen geen meldingen worden aangezet. Op een iPhone werkt het alleen als je de app via Zet op beginscherm hebt toegevoegd en via het icoon opent.</p>`;
     return;
   }
   if (Notification.permission === "denied") {
-    el.innerHTML = `<h3>Meldingen</h3><p class="muted">Meldingen zijn geblokkeerd. Zet ze aan in de instellingen van je telefoon (op de iPhone: Instellingen, Berichtgeving, F1 Poule) en open de app opnieuw.</p>`;
+    el.innerHTML = `<p class="muted">Meldingen zijn geblokkeerd. Zet ze aan in de instellingen van je telefoon (op de iPhone: Instellingen, Berichtgeving, F1 Poule) en open de app opnieuw.</p>`;
     return;
   }
+  const setState = t => { const x = $("#pushState"); if (x) x.textContent = t; };
   const reg = await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.getSubscription();
+  setState(sub ? "Aan" : "Uit");
   if (sub) {
     const j = sub.toJSON();
     sb.rpc("save_push_subscription", { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth });
-    el.innerHTML = `<h3>Meldingen</h3>
+    el.innerHTML = `
       <p>Meldingen staan aan op dit apparaat. Je krijgt een melding als er een race aankomt en als je je voorspelling nog niet hebt ingevuld.</p>
       <div class="row wrap"><button type="button" class="btn ghost" id="pushTest">Testmelding sturen</button>
       <button type="button" class="btn ghost" id="pushOff">Uitzetten</button></div>`;
@@ -1073,7 +1096,7 @@ async function pushPanel(el) {
     };
     return;
   }
-  el.innerHTML = `<h3>Meldingen</h3>
+  el.innerHTML = `
     <p class="muted">Krijg een melding als er een race aankomt en als je je voorspelling nog niet hebt ingevuld.</p>
     <button type="button" class="btn" id="pushOn">Meldingen aanzetten</button>`;
   $("#pushOn").onclick = async () => {
@@ -1097,8 +1120,10 @@ async function mfaPanel(el) {
   const { data } = await sb.auth.mfa.listFactors();
   const verified = data?.totp?.[0];
   const admin = state.me?.is_admin;
+  const st = $("#mfaState");
+  if (st) st.textContent = verified ? "Aan" : "Uit";
   if (verified) {
-    el.innerHTML = `<h3>Tweestapsverificatie</h3>
+    el.innerHTML = `
       <p>Staat aan. Bij het inloggen vraagt de app om een code uit je authenticator-app.</p>
       ${admin ? `<p class="muted small">Als beheerder heb je dit nodig voor Beheer. Zet je het uit, dan kun je niet meer bij Beheer.</p>` : ""}
       <button type="button" class="btn ghost" id="mfaOff">Uitzetten</button>`;
@@ -1113,14 +1138,14 @@ async function mfaPanel(el) {
     };
     return;
   }
-  el.innerHTML = `<h3>Tweestapsverificatie</h3>
+  el.innerHTML = `
     <p class="muted">Extra beveiliging: bij het inloggen vul je ook een code in uit een authenticator-app, zoals de iPhone-app Wachtwoorden.${admin ? " Voor beheerders is dit verplicht." : ""}</p>
     <button type="button" class="btn" id="mfaOn">Aanzetten</button>`;
   $("#mfaOn").onclick = async () => {
     for (const f of (data?.all || []).filter(f => f.status !== "verified")) await sb.auth.mfa.unenroll({ factorId: f.id });
     const { data: en, error } = await sb.auth.mfa.enroll({ factorType: "totp", friendlyName: "F1 Poule " + Date.now(), issuer: "F1 Poule" });
     if (error) return toast("Aanzetten lukte niet: " + error.message);
-    el.innerHTML = `<h3>Tweestapsverificatie</h3>
+    el.innerHTML = `
       <p>1. Scan deze QR-code met je authenticator-app. Op de iPhone kan dat met de camera; kies daarna de app Wachtwoorden.</p>
       <img src="${en.totp.qr_code}" alt="QR-code voor tweestapsverificatie" style="width:200px;height:200px;background:#fff;padding:8px;border-radius:8px">
       <p class="muted small">Lukt scannen niet? Vul dan deze sleutel handmatig in: <code style="word-break:break-all">${esc(en.totp.secret)}</code></p>

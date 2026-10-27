@@ -270,7 +270,7 @@ body.wide main { max-width: 1200px; }
 .rtable .sub { padding-top: 0; }
 .prize span:nth-child(odd) { display: inline-block; width: 6rem; }
 
-.ntline { display: grid; grid-template-columns: auto 1fr 8rem; gap: .75rem; align-items: end; }
+.ntline { display: grid; grid-template-columns: auto 8rem; gap: .75rem; align-items: end; }
 @media (max-width: 640px) { .ntline { grid-template-columns: 1fr 1fr; } .ntline .check { grid-column: 1 / -1; } }
 
 /* Punten per race */
@@ -324,7 +324,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-27.2";
+const VERSION = "2026-10-27.3";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -1338,12 +1338,15 @@ async function admNotifications(box) {
       .gt("closes_at", new Date().toISOString()).order("closes_at").limit(1),
   ]);
   if (!st?.length) { box.innerHTML = `<p class="panel">De meldingen zijn nog niet ingesteld. Draai eerst het SQL-script voor de meldingen.</p>`; return; }
-  const DAYS = [[1, "Maandag"], [2, "Dinsdag"], [3, "Woensdag"], [4, "Donderdag"]];
-  const LABEL = { aankondiging: "Er komt een race aan (naar iedereen)", herinnering: "Herinnering (alleen wie nog niet alles heeft ingevuld)" };
+  const LABEL = {
+    aankondiging: "Er komt een race aan: op maandag van de raceweek, naar iedereen",
+    herinnering: "Herinnering: de avond voor het sluiten, alleen naar wie nog niet alles heeft ingevuld",
+  };
   const g = next?.[0];
   const dueOf = s => {
     const d = new Date(g.closes_at);
-    d.setDate(d.getDate() - (5 - s.weekday));
+    if (s.kind === "aankondiging") d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    else d.setDate(d.getDate() - 1);
     const [h, m] = s.at_time.split(":");
     d.setHours(Number(h), Number(m), 0, 0);
     return d;
@@ -1352,15 +1355,14 @@ async function admNotifications(box) {
     ${st.map(s => `<fieldset class="panel stack"><legend>${LABEL[s.kind] || s.kind}</legend>
       <div class="ntline">
         <label class="check"><input type="checkbox" name="en_${s.kind}" ${s.enabled ? "checked" : ""}> Aan</label>
-        <label class="field"><span>Dag in de raceweek</span><select name="day_${s.kind}">${DAYS.map(([v, l]) => `<option value="${v}" ${v === s.weekday ? "selected" : ""}>${l}</option>`).join("")}</select></label>
         <label class="field"><span>Tijd</span><input type="time" name="time_${s.kind}" value="${s.at_time.slice(0, 5)}" required></label>
       </div>
       <label class="field"><span>Titel</span><input name="title_${s.kind}" value="${esc(s.title)}" required maxlength="60"></label>
-      <label class="field"><span>Tekst (${"{race}"} wordt de naam van de race)</span><input name="body_${s.kind}" value="${esc(s.body)}" required maxlength="160"></label>
-      ${g && s.enabled ? `<p class="muted small">Volgende keer: ${fmtDateTime(dueOf(s))}, voor ${esc(g.name)}.</p>` : ""}
+      <label class="field"><span>Tekst (${"{race}"} wordt de naam van de race, ${"{sluiting}"} de sluitingstijd)</span><input name="body_${s.kind}" value="${esc(s.body)}" required maxlength="160"></label>
+      ${g && s.enabled ? `<p class="muted small">${dueOf(s) < new Date() ? "Voor deze race al voorbij" : "Volgende keer: " + fmtDateTime(dueOf(s))}, ${esc(g.name)} (sluit ${fmtDateTime(g.closes_at)}).</p>` : ""}
     </fieldset>`).join("")}
     <div class="row wrap" style="justify-content:space-between">
-      <p class="muted small">De dag is die in de week van het raceweekend. Het invullen blijft sluiten in de nacht van donderdag op vrijdag om 01:00.</p>
+      <p class="muted small">Het invullen sluit om 01:00 op de dag van de eerste vrije training. De dagen van de meldingen schuiven daarmee mee; alleen het tijdstip stel je hier in.</p>
       <button class="btn">Opslaan</button>
     </div>
   </form>
@@ -1373,7 +1375,6 @@ async function admNotifications(box) {
     for (const s of st) {
       const { error } = await sb.from("notification_settings").update({
         enabled: f.get("en_" + s.kind) === "on",
-        weekday: Number(f.get("day_" + s.kind)),
         at_time: f.get("time_" + s.kind),
         title: String(f.get("title_" + s.kind)).trim(),
         body: String(f.get("body_" + s.kind)).trim(),
@@ -1396,8 +1397,11 @@ function gpForm(g = {}, qc = 0) {
     </div>
     <label class="field"><span>Circuit</span><input name="circuit" value="${esc(g.circuit)}"></label>
     <div class="grid2">
+      <label class="field"><span>Eerste sessie (vrije training 1)</span><input name="first_session" type="datetime-local" value="${toLocalInput(g.first_session)}"></label>
       <label class="field"><span>Start race</span><input name="race_start" type="datetime-local" value="${toLocalInput(g.race_start)}"></label>
-      <label class="field"><span>Sluit op (leeg = vrijdag 01:00)</span><input name="closes_at" type="datetime-local" value="${toLocalInput(g.closes_at)}"></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>Sluit op (leeg = 01:00 op de dag van de eerste sessie)</span><input name="closes_at" type="datetime-local" value="${toLocalInput(g.closes_at)}"></label>
     </div>
     <label class="field"><span>Status</span><select name="status">
       ${["gepland", "verplaatst", "geannuleerd"].map(s => `<option ${s === st ? "selected" : ""}>${s}</option>`).join("")}
@@ -1492,6 +1496,7 @@ async function admCalendar(box) {
       circuit: String(f.get("circuit")).trim() || null,
       round: f.get("round") ? Number(f.get("round")) : null,
       race_start: fromLocalInput(f.get("race_start")),
+      first_session: fromLocalInput(f.get("first_session")),
       closes_at: fromLocalInput(f.get("closes_at")),
       status: f.get("status"),
     };
@@ -1591,10 +1596,11 @@ async function importSeason(year) {
       ext_circuit: r.Circuit?.circuitId || null,
       quali_start: r.Qualifying ? isoOf(r.Qualifying.date, r.Qualifying.time) : null,
       race_start: isoOf(r.date, r.time),
+      first_session: r.FirstPractice ? isoOf(r.FirstPractice.date, r.FirstPractice.time) : null,
     };
     const ex = (existing || []).find(g => g.ext_circuit && g.ext_circuit === row.ext_circuit);
     if (ex) {
-      const upd = { round: row.round, quali_start: row.quali_start, race_start: row.race_start };
+      const upd = { round: row.round, quali_start: row.quali_start, race_start: row.race_start, first_session: row.first_session };
       const moved = ex.race_start && row.race_start && new Date(ex.race_start).getTime() !== new Date(row.race_start).getTime();
       if (moved && ex.status === "gepland") upd.status = "verplaatst";
       must(await sb.from("grand_prix").update(upd).eq("id", ex.id));

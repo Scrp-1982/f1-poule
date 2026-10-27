@@ -311,17 +311,19 @@ body.wide main { max-width: 1200px; }
 .times dt, .times dd { margin: 0; }
 
 /* Punten per race */
-.matrix { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
-.matrix table { border-collapse: collapse; font-size: .95rem; }
-.matrix th { font-weight: 500; color: var(--muted); vertical-align: bottom; padding: .5rem .3rem; }
+.matrix { overflow-x: auto; background: #000; border: 1px solid var(--line); border-radius: 10px; padding: .4rem 0 .6rem; }
+.matrix table { border-collapse: collapse; font-size: 1rem; }
+.matrix th { font-weight: 500; color: var(--ink); vertical-align: bottom; padding: .6rem 0 .7rem; }
 .matrix th.v span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; display: inline-block; }
-.matrix th.x span { text-decoration: line-through; }
-.matrix td { text-align: center; padding: .35rem .45rem; }
-.matrix td.nm, .matrix th.nm { text-align: left; padding-left: .8rem; white-space: nowrap; position: sticky; left: 0; background: inherit; }
-.matrix tbody tr:nth-child(odd) { background: var(--row); }
-.matrix tbody tr:nth-child(even) { background: var(--surface); }
-.matrix thead tr { background: var(--surface); }
-.matrix td.tot { font: 700 1.1rem var(--display); color: var(--orange); }
+.matrix th.x span { text-decoration: line-through; color: var(--muted); }
+.matrix th.v, .matrix td { width: 2.6rem; min-width: 2.6rem; text-align: center; }
+.matrix td { padding: .45rem .3rem; font-variant-numeric: tabular-nums; }
+.matrix td.nm, .matrix th.nm { width: auto; min-width: 6rem; text-align: left; padding: .45rem 1.2rem .45rem .9rem; white-space: nowrap; position: sticky; left: 0; background: #000; }
+.matrix td.tot { width: 3.4rem; min-width: 3.4rem; font: 700 1.15rem var(--display); color: var(--orange); }
+.matrix th.v.totc { padding-right: .4rem; }
+.matrix tbody tr:nth-child(odd) td:not(.nm) { background: var(--row); }
+.matrix tbody tr:nth-child(even) td:not(.nm) { background: #000; }
+.matrix tbody td:last-child { padding-right: .9rem; }
 
 #toast {
   position: fixed; left: 50%; bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%) translateY(1rem);
@@ -361,7 +363,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-27.11";
+const VERSION = "2026-10-27.12";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -1052,7 +1054,7 @@ async function renderStand() {
     </li>`).join("")}</ol>
     ${cols.length ? `<h3>Punten per race</h3>
     <div class="matrix"><table>
-      <thead><tr><th class="nm"></th><th class="v"><span>Totaal</span></th>
+      <thead><tr><th class="nm"></th><th class="v totc"><span>Totaal</span></th>
         ${cols.map(g => `<th class="v${g.status === "geannuleerd" ? " x" : ""}" title="${esc(g.name)}"><span>${esc(g.country || g.name)}</span></th>`).join("")}
         <th class="v"><span>Seizoensvragen</span></th></tr></thead>
       <tbody>${rows.map(r => `<tr><td class="nm">${esc(r.p.display_name)}</td><td class="tot">${r.pts}</td>

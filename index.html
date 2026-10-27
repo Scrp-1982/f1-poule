@@ -305,6 +305,9 @@ body.wide main { max-width: 1200px; }
 .pmx .plus { font: 700 .85rem var(--display); }
 .pmx td.none { color: var(--muted); }
 
+.times { display: grid; grid-template-columns: auto 1fr; gap: 0 .5rem; margin: 0; color: var(--muted); }
+.times dt, .times dd { margin: 0; }
+
 /* Punten per race */
 .matrix { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 .matrix table { border-collapse: collapse; font-size: .95rem; }
@@ -356,7 +359,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-27.8";
+const VERSION = "2026-10-27.9";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -812,8 +815,7 @@ async function renderWeekend(prefix) {
   const groups = CATS.map(([k, l]) => ({ l, items: (qs || []).filter(q => q.category === k) })).filter(g => g.items.length);
   view().innerHTML = prefix + `
     <div><h2 class="gp-title">${esc(next.name)}</h2>
-      ${next.quali_start ? `<p class="muted">Kwalificatie: ${fmtDateTime(next.quali_start)}</p>` : ""}
-      <p class="muted">Race: ${fmtDateTime(next.race_start)}</p></div>
+      ${timesBlock(next)}</div>
     <p class="banner">De voorspellingen van iedereen worden zichtbaar op ${fmtDateTime(next.closes_at)}, zodra het invullen sluit. Hieronder zie je alleen wat jij hebt ingevuld.</p>
     ${groups.map(g => `<fieldset class="panel"><legend>${g.l}</legend>
       <ul class="list">${g.items.map(q => `<li><span>${esc(q.text)}</span>
@@ -830,6 +832,11 @@ const CHECK_SVG = `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="
 const checkMark = r => r?.total && r.filled === r.total
   ? `<span class="chk" title="Alles ingevuld">${CHECK_SVG}<span class="sr-only">Alles ingevuld</span></span>`
   : `<span class="chk"></span>`;
+
+// Kwalificatie en race netjes onder elkaar
+const timesBlock = g => `<dl class="times">
+  ${g.quali_start ? `<dt>Kwalificatie:</dt><dd>${fmtDateTime(g.quali_start)}</dd>` : ""}
+  <dt>Race:</dt><dd>${fmtDateTime(g.race_start)}</dd></dl>`;
 
 function pill(open, cancelled, filled = 0, total = 0) {
   if (cancelled) return `<span class="pill cancel">Geannuleerd</span>`;
@@ -881,8 +888,7 @@ async function renderQuestionPage(ctx) {
   let html = (ctx.prefix ?? `<a class="back" href="${open ? "#races" : "#voorspellingen/alle"}">${open ? "Alle races" : "Alle voorspellingen"}</a>`) + `
     <div><h2 class="gp-title">${esc(title)}</h2>
     ${kind === "gp" ? `<p class="muted">${esc([gp.circuit, gp.country].filter(Boolean).join(", "))}</p>
-      ${gp.quali_start ? `<p class="muted">Kwalificatie: ${fmtDateTime(gp.quali_start)}</p>` : ""}
-      <p class="muted">Race: ${fmtDateTime(gp.race_start)}</p>` : ""}</div>`;
+      ${timesBlock(gp)}` : ""}</div>`;
 
   if (cancelled) html += `<p class="banner red">Deze grand prix is geannuleerd en telt niet mee voor de stand.</p>`;
   else if (gp?.status === "verplaatst") html += `<p class="banner">Deze race is verplaatst. Je voorspellingen blijven gewoon staan.</p>`;

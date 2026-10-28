@@ -374,7 +374,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-28.4";
+const VERSION = "2026-10-28.5";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -902,7 +902,10 @@ async function renderQuestionPage(ctx) {
 
   setTab(ctx.prefix ? "voorspellingen" : open ? "races" : "voorspellingen");
   if (ctx.prefix) setTitle("Voorspellingen");
-  let html = (ctx.prefix ?? `<a class="back" href="${open ? "#races" : "#voorspellingen/alle"}">${open ? "Alle races" : "Alle voorspellingen"}</a>`) + `
+  let html = (ctx.prefix ?? `<div class="row" style="justify-content:space-between">
+      <a class="back" href="${open ? "#races" : "#voorspellingen/alle"}">${open ? "Alle races" : "Alle voorspellingen"}</a>
+      ${open && kind === "gp" && qs.length ? `<button type="button" class="btn ghost small" id="copyPrev">Vorige overnemen</button>` : ""}
+    </div>`) + `
     <div><h2 class="gp-title">${esc(title)}</h2>
     ${kind === "gp" ? `<p class="muted">${esc([gp.circuit, gp.country].filter(Boolean).join(", "))}</p>
       ${timesBlock(gp)}` : ""}</div>`;
@@ -944,6 +947,41 @@ async function renderQuestionPage(ctx) {
     };
     count();
     form.onchange = count;
+    const cp = $("#copyPrev");
+    if (cp) cp.onclick = async () => {
+      const empty = qs.filter(q => !form.elements["q" + q.id].value);
+      if (!empty.length) return toast("Alles is al ingevuld.");
+      cp.disabled = true;
+      // De laatste eerdere race van dit seizoen waarvoor je iets hebt ingevuld
+      const { data: prevGps } = await sb.from("grand_prix").select("id, name").eq("season", gp.season)
+        .lt("race_start", gp.race_start).order("race_start", { ascending: false });
+      let from = null, prevByQ = {};
+      for (const pg of prevGps || []) {
+        const { data: pq } = await sb.from("gp_questions").select("id, question_id").eq("grand_prix_id", pg.id);
+        if (!pq?.length) continue;
+        const { data: pp } = await sb.from("predictions").select("*").eq("user_id", state.user.id).in("gp_question_id", pq.map(x => x.id));
+        if (!pp?.length) continue;
+        from = pg;
+        for (const p of pp) {
+          const qid = pq.find(x => x.id === p.gp_question_id)?.question_id;
+          if (qid) prevByQ[qid] = p;
+        }
+        break;
+      }
+      cp.disabled = false;
+      if (!from) return toast("Je hebt nog geen eerdere voorspelling om over te nemen.");
+      let n = 0;
+      for (const q of empty) {
+        const v = answerValue(q, prevByQ[q.question_id]);
+        if (v == null) continue;
+        const el = form.elements["q" + q.id];
+        el.value = String(v);
+        if (el.value === String(v)) n++;
+      }
+      count();
+      toast(n ? `${n} ${n === 1 ? "antwoord" : "antwoorden"} overgenomen van ${from.name}. Controleer ze en sla je voorspelling op.`
+              : `Er viel niets over te nemen van ${from.name}.`);
+    };
     form.onsubmit = async e => {
       e.preventDefault();
       const btn = form.querySelector("button[type=submit]");

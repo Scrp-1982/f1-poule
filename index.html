@@ -294,7 +294,8 @@ body.wide main { max-width: 1200px; }
 .rtable .num { text-align: center; min-width: 4rem; }
 .rtable .gap td { height: 1.2rem; border: 0; }
 .rtable .sub { padding-top: 0; }
-.prize span:nth-child(odd) { display: inline-block; width: 6rem; }
+.prize { display: grid; grid-template-columns: 6rem 3.5rem; row-gap: .2rem; line-height: 1.65; margin-bottom: 1.1rem; }
+.prize span:nth-child(even) { text-align: right; font-variant-numeric: tabular-nums; }
 
 .ntline { display: grid; grid-template-columns: auto 8rem; gap: .75rem; align-items: end; }
 @media (max-width: 640px) { .ntline { grid-template-columns: 1fr 1fr; } .ntline .check { grid-column: 1 / -1; } }
@@ -374,7 +375,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-28.5";
+const VERSION = "2026-10-28.7";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -1601,7 +1602,7 @@ async function renderRules() {
     </table></div>
     <h3 class="rh">Inleg:</h3>
     <p>De inleg bedraagt €10,- en zal als volgt verdeeld worden.</p>
-    <p class="prize"><span>1e prijs</span><span>€35,-</span><br><span>2e prijs</span><span>€15,-</span></p>
+    <div class="prize"><span>1e prijs</span><span>€35,-</span><span>2e prijs</span><span>€15,-</span></div>
   </article>`;
 }
 

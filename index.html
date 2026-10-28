@@ -306,6 +306,7 @@ body.wide main { max-width: 1200px; }
 .pmx th, .pmx td { padding: .32rem .7rem; text-align: left; white-space: nowrap; font-weight: 400; vertical-align: top; }
 .pmx thead th { font-weight: 600; padding-top: .6rem; }
 .pmx .q { position: sticky; left: 0; z-index: 1; background: #000; white-space: normal; min-width: 10.5rem; max-width: 16rem; }
+@media (min-width: 700px) { .pmx .q { white-space: nowrap; max-width: none; } }
 .pmx .alt { background: var(--row); }
 .pmx .res { background: var(--surface); font-weight: 600; border-left: 2px solid var(--orange); border-right: 2px solid var(--orange); }
 .pmx thead th.res { color: var(--orange); }
@@ -375,7 +376,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-28.7";
+const VERSION = "2026-10-28.8";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -917,8 +918,6 @@ async function renderQuestionPage(ctx) {
     html += deadline
       ? `<p class="banner yellow">Invullen en wijzigen kan tot ${fmtDateTime(deadline)} (${untilText(deadline)}).</p>`
       : `<p class="banner yellow">De sluitingstijd is nog niet bekend.</p>`;
-  } else if (!cancelled) {
-    html += `<p class="banner">Gesloten sinds ${fmtDateTime(deadline)}.</p>`;
   }
 
   if (!qs.length) {
@@ -1061,8 +1060,7 @@ async function renderQuestionPage(ctx) {
         </tr>`;
       }).join("")}
     </tbody>`).join("")}
-  </table></div>
-  <p class="muted small">Een groen antwoord is goed. Op een telefoon kun je de tabel opzij schuiven; de vragen blijven staan.</p>`;
+  </table></div>`;
   view().innerHTML = html;
 
 }

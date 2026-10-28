@@ -376,7 +376,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-28.9";
+const VERSION = "2026-10-28.10";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -1068,10 +1068,36 @@ async function renderQuestionPage(ctx) {
 // ---------------------------------------------------------------------
 // Stand
 // ---------------------------------------------------------------------
+// Eindstanden van afgesloten seizoenen
+async function archiveHtml(openFirst) {
+  const { data } = await sb.from("final_standings").select("season, display_name, rank, points")
+    .order("season", { ascending: false }).order("rank").order("display_name");
+  const bySeason = {};
+  for (const r of data || []) (bySeason[r.season] ||= []).push(r);
+  const seasons = Object.keys(bySeason).map(Number).sort((a, b) => b - a);
+  if (!seasons.length) return "";
+  return seasons.map((y, i) => {
+    const list = bySeason[y];
+    const winners = list.filter(r => r.rank === 1).map(r => esc(r.display_name)).join(" en ");
+    return `<details class="panel fold" ${openFirst && i === 0 ? "open" : ""}>
+      <summary>Eindstand ${y} <span class="state">${winners}, ${list[0].points} punten</span></summary>
+      <ol class="tower">${list.map(r => `<li class="${r.rank === 1 ? "p1" : ""}">
+        <span class="pos">${r.rank}</span><span class="who">${esc(r.display_name)}</span><span></span>
+        <span class="pts">${r.points}</span></li>`).join("")}</ol>
+    </details>`;
+  }).join("");
+}
+
 async function renderStand() {
   setTitle("Stand");
-  if (!state.season) { view().innerHTML = `<p class="panel">Er staat nog geen seizoen klaar.</p>`; return; }
+  if (!state.season) {
+    view().innerHTML = LOADING;
+    const arch = await archiveHtml(true);
+    view().innerHTML = arch || `<p class="panel">Er staat nog geen seizoen klaar.</p>`;
+    return;
+  }
   view().innerHTML = LOADING;
+  const archP = archiveHtml(false);
   const [{ data: sc, error }, { data: gps }] = await Promise.all([
     sb.from("score_totals").select("user_id, points, grand_prix_id").eq("season", state.season),
     sb.from("grand_prix").select("id, name, country, race_start, status").eq("season", state.season),
@@ -1111,7 +1137,8 @@ async function renderStand() {
       <tbody>${rows.map(r => `<tr><td class="nm">${esc(r.p.display_name)}</td><td class="tot">${r.pts}</td>
         ${cols.map(g => `<td>${perGp[g.id] && raced(g) ? (perGp[g.id][r.p.id] || 0) : ""}</td>`).join("")}
         <td>${hasSeason ? (seasonPts[r.p.id] || 0) : ""}</td></tr>`).join("")}</tbody>
-    </table></div>` : ""}`;
+    </table></div>` : ""}
+    ${await archP}`;
 }
 
 // ---------------------------------------------------------------------
@@ -1772,6 +1799,8 @@ async function admCalendar(box) {
         <p>Je bewerkt nu <b>${year}</b>. Een ander seizoen kies je rechtsboven.</p>
         <button type="button" class="btn" id="importBtn">Kalender, teams en coureurs ophalen</button>
         <p class="muted small">Haalt de gegevens op bij de F1-gegevensbron Jolpica. Bestaande races krijgen de nieuwe datum en tijd; voorspellingen blijven staan. Een race die uit de kalender verdwijnt, zet je zelf op geannuleerd.</p>
+        <button type="button" class="btn ghost" id="closeSeason">Seizoen ${year} afsluiten</button>
+        <p class="muted small">Na de laatste race: bewaart de eindstand (te zien onder Stand) en wist daarna alle races, vragen, voorspellingen en uitslagen van ${year}. Teams, coureurs, deelnemers en de vragenlijst blijven staan.</p>
         <form id="seasonDl" class="stack">
           <label class="field"><span>Sluitingstijd seizoensvragen</span><input type="datetime-local" name="deadline" value="${toLocalInput(s?.deadline)}"></label>
           <button class="btn ghost">Sluitingstijd opslaan</button>
@@ -1808,6 +1837,17 @@ async function admCalendar(box) {
     } catch (err) {
       toast("Ophalen lukte niet: " + (err.message || err));
     }
+    admCalendar(box);
+  };
+  $("#closeSeason").onclick = async () => {
+    const typed = prompt(`Seizoen ${year} afsluiten? De eindstand wordt bewaard, daarna worden alle races, voorspellingen en uitslagen van ${year} definitief gewist.\n\nTyp ${year} om te bevestigen.`);
+    if (typed === null) return;
+    if (typed.trim() !== String(year)) return toast("Niet afgesloten: het jaartal klopte niet.");
+    const { data, error } = await sb.rpc("archive_season", { season_year: year });
+    if (error) return toast("Afsluiten lukte niet: " + error.message);
+    state.season = null;
+    await loadBase();
+    toast(`Seizoen ${year} afgesloten. Eindstand van ${data} deelnemers bewaard.`);
     admCalendar(box);
   };
   $("#seasonDl").onsubmit = async e => {

@@ -376,7 +376,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-28.8";
+const VERSION = "2026-10-28.9";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -1073,7 +1073,7 @@ async function renderStand() {
   if (!state.season) { view().innerHTML = `<p class="panel">Er staat nog geen seizoen klaar.</p>`; return; }
   view().innerHTML = LOADING;
   const [{ data: sc, error }, { data: gps }] = await Promise.all([
-    sb.from("scores").select("user_id, points, grand_prix_id").eq("season", state.season),
+    sb.from("score_totals").select("user_id, points, grand_prix_id").eq("season", state.season),
     sb.from("grand_prix").select("id, name, country, race_start, status").eq("season", state.season),
   ]);
   if (error) { view().innerHTML = `<p class="panel">De stand kon niet worden geladen: ${esc(error.message)}</p>`; return; }
@@ -1090,7 +1090,8 @@ async function renderStand() {
     }
   }
   const cols = [...(gps || [])].sort((a, b) => new Date(a.race_start || 0) - new Date(b.race_start || 0));
-  const last = (gps || []).filter(g => perGp[g.id]).sort((a, b) => new Date(b.race_start) - new Date(a.race_start))[0];
+  const raced = g => g.race_start && new Date(g.race_start) <= new Date();
+  const last = (gps || []).filter(g => perGp[g.id] && raced(g)).sort((a, b) => new Date(b.race_start) - new Date(a.race_start))[0];
   const rows = state.profiles.map(p => ({ p, pts: total[p.id] || 0, last: last ? (perGp[last.id][p.id] || 0) : null }))
     .sort((a, b) => b.pts - a.pts || a.p.display_name.localeCompare(b.p.display_name));
   view().innerHTML = `
@@ -1108,7 +1109,7 @@ async function renderStand() {
         ${cols.map(g => `<th class="v${g.status === "geannuleerd" ? " x" : ""}" title="${esc(g.name)}"><span>${esc(g.country || g.name)}</span></th>`).join("")}
         <th class="v"><span>Seizoensvragen</span></th></tr></thead>
       <tbody>${rows.map(r => `<tr><td class="nm">${esc(r.p.display_name)}</td><td class="tot">${r.pts}</td>
-        ${cols.map(g => `<td>${perGp[g.id] ? (perGp[g.id][r.p.id] || 0) : ""}</td>`).join("")}
+        ${cols.map(g => `<td>${perGp[g.id] && raced(g) ? (perGp[g.id][r.p.id] || 0) : ""}</td>`).join("")}
         <td>${hasSeason ? (seasonPts[r.p.id] || 0) : ""}</td></tr>`).join("")}</tbody>
     </table></div>` : ""}`;
 }

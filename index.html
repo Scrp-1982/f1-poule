@@ -376,7 +376,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-28.11";
+const VERSION = "2026-10-29.1";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -586,20 +586,20 @@ async function afterLogin(user) {
 }
 
 async function loadBase() {
-  const [s, t, d, p] = await Promise.all([
+  const [s, t, d, p, f] = await Promise.all([
     sb.from("seasons").select("*").order("year", { ascending: false }),
     sb.from("teams").select("*").order("name"),
     sb.from("drivers").select("*").order("last_name"),
     sb.from("profiles").select("id, display_name, is_admin").order("display_name"),
+    sb.from("final_standings").select("season"),
   ]);
   state.seasons = s.data || [];
+  state.archived = [...new Set((f.data || []).map(r => r.season))].sort((a, b) => b - a);
   state.teams = t.data || [];
   state.drivers = d.data || [];
   state.profiles = p.data || [];
-  if (!state.seasons.some(x => x.year === state.season)) {
-    const y = new Date().getFullYear();
-    state.season = (state.seasons.find(x => x.year === y) || state.seasons[0])?.year ?? null;
-  }
+  // Het lopende seizoen is altijd het nieuwste seizoen in de database
+  state.season = state.seasons[0]?.year ?? null;
   await loadLineup();
   renderSeasonPicker();
 }
@@ -617,16 +617,17 @@ async function setSeason(year) {
   renderSeasonPicker();
 }
 
+// Jaarkeuze rechtsboven: alleen bij Stand (lopend seizoen + eindstanden)
+const standYears = () => [...new Set([...(state.season ? [state.season] : []), ...(state.archived || [])])].sort((a, b) => b - a);
 function renderSeasonPicker() {
   const el = $("#seasonPick");
-  if (!state.user || !state.seasons.length) { el.innerHTML = ""; return; }
-  el.innerHTML = `<select aria-label="Seizoen">${state.seasons.map(s =>
-    `<option value="${s.year}" ${s.year === state.season ? "selected" : ""}>${s.year}</option>`).join("")}</select>`;
-  el.querySelector("select").onchange = async e => {
-    await setSeason(Number(e.target.value));
-    if (location.hash.startsWith("#gp/") || location.hash.startsWith("#seizoen/")) location.hash = "#races";
-    else route();
-  };
+  const page = (location.hash.slice(1) || "races").split("/")[0];
+  const years = standYears();
+  if (!state.user || page !== "stand" || !years.length) { el.innerHTML = ""; return; }
+  if (!years.includes(state.standYear)) state.standYear = years[0];
+  el.innerHTML = `<select aria-label="Seizoen">${years.map(y =>
+    `<option value="${y}" ${y === state.standYear ? "selected" : ""}>${y}</option>`).join("")}</select>`;
+  el.querySelector("select").onchange = e => { state.standYear = Number(e.target.value); renderStand(); };
 }
 
 // ---------------------------------------------------------------------
@@ -635,6 +636,7 @@ function renderSeasonPicker() {
 function route() {
   const [page, arg] = (location.hash.slice(1) || "races").split("/");
   closeMenu();
+  renderSeasonPicker();
   document.body.classList.toggle("wide", page === "beheer" || page === "uitslagen");
   setTab(["gp", "seizoen"].includes(page) ? null : page);
   window.scrollTo(0, 0);
@@ -1068,39 +1070,28 @@ async function renderQuestionPage(ctx) {
 // ---------------------------------------------------------------------
 // Stand
 // ---------------------------------------------------------------------
-// Eindstanden van afgesloten seizoenen
-async function archiveHtml(openFirst) {
-  const { data } = await sb.from("final_standings").select("season, display_name, rank, points")
-    .order("season", { ascending: false }).order("rank").order("display_name");
-  const bySeason = {};
-  for (const r of data || []) (bySeason[r.season] ||= []).push(r);
-  const seasons = Object.keys(bySeason).map(Number).sort((a, b) => b - a);
-  if (!seasons.length) return "";
-  return seasons.map((y, i) => {
-    const list = bySeason[y];
-    const winners = list.filter(r => r.rank === 1).map(r => esc(r.display_name)).join(" en ");
-    return `<details class="panel fold" ${openFirst && i === 0 ? "open" : ""}>
-      <summary>Eindstand ${y} <span class="state">${winners}, ${list[0].points} punten</span></summary>
-      <ol class="tower">${list.map(r => `<li class="${r.rank === 1 ? "p1" : ""}">
-        <span class="pos">${r.rank}</span><span class="who">${esc(r.display_name)}</span><span></span>
-        <span class="pts">${r.points}</span></li>`).join("")}</ol>
-    </details>`;
-  }).join("");
+// Eindstand van een afgesloten seizoen
+async function renderFinal(y) {
+  const { data } = await sb.from("final_standings").select("display_name, rank, points")
+    .eq("season", y).order("rank").order("display_name");
+  const list = data || [];
+  view().innerHTML = `<div><h2>Eindstand ${y}</h2>
+      <p class="muted">Het seizoen ${y} is afgesloten. Dit is de stand op het moment van afsluiten.</p></div>
+    <ol class="tower">${list.map(r => `<li class="${r.rank === 1 ? "p1" : ""}">
+      <span class="pos">${r.rank}</span><span class="who">${esc(r.display_name)}</span><span></span>
+      <span class="pts">${r.points}</span></li>`).join("")}</ol>`;
 }
 
 async function renderStand() {
   setTitle("Stand");
-  if (!state.season) {
-    view().innerHTML = LOADING;
-    const arch = await archiveHtml(true);
-    view().innerHTML = arch || `<p class="panel">Er staat nog geen seizoen klaar.</p>`;
-    return;
-  }
+  renderSeasonPicker();
+  const y = state.standYear ?? standYears()[0];
+  if (!y) { view().innerHTML = `<p class="panel">Er staat nog geen seizoen klaar.</p>`; return; }
   view().innerHTML = LOADING;
-  const archP = archiveHtml(false);
+  if (y !== state.season) return renderFinal(y);
   const [{ data: sc, error }, { data: gps }] = await Promise.all([
-    sb.from("score_totals").select("user_id, points, grand_prix_id").eq("season", state.season),
-    sb.from("grand_prix").select("id, name, country, race_start, status").eq("season", state.season),
+    sb.from("score_totals").select("user_id, points, grand_prix_id").eq("season", y),
+    sb.from("grand_prix").select("id, name, country, race_start, status").eq("season", y),
   ]);
   if (error) { view().innerHTML = `<p class="panel">De stand kon niet worden geladen: ${esc(error.message)}</p>`; return; }
   const total = {}, perGp = {}, seasonPts = {};
@@ -1137,8 +1128,7 @@ async function renderStand() {
       <tbody>${rows.map(r => `<tr><td class="nm">${esc(r.p.display_name)}</td><td class="tot">${r.pts}</td>
         ${cols.map(g => `<td>${perGp[g.id] && raced(g) ? (perGp[g.id][r.p.id] || 0) : ""}</td>`).join("")}
         <td>${hasSeason ? (seasonPts[r.p.id] || 0) : ""}</td></tr>`).join("")}</tbody>
-    </table></div>` : ""}
-    ${await archP}`;
+    </table></div>` : ""}`;
 }
 
 // ---------------------------------------------------------------------
@@ -1858,6 +1848,7 @@ async function admCalendar(box) {
     const { data, error } = await sb.rpc("archive_season", { season_year: year, confirm_text: closeTxt.value });
     if (error) return toast("Afsluiten lukte niet: " + error.message);
     state.season = null;
+    state.standYear = null;
     await loadBase();
     toast(`Seizoen ${year} afgesloten. Eindstand van ${data} deelnemers bewaard.`);
     admCalendar(box);

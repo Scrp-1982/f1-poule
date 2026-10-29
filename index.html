@@ -173,6 +173,7 @@ input[type=color] { width: 3rem; padding: .15rem; height: 2.4rem; }
 .pill { font: 600 .9rem var(--display); padding: .15rem .5rem; border-radius: 4px; grid-row: span 2; white-space: nowrap; text-align: center; align-self: center; }
 .races .pill { justify-self: stretch; }
 .races.hist a { grid-template-columns: 2.4rem 1fr 6.4rem; }
+.races.res a { grid-template-columns: 2.4rem 1fr 22px; }
 .pill.open { background: var(--orange); color: #000; }
 .pill.closed { background: var(--row); color: var(--muted); }
 .pill.cancel { background: var(--closed-soft); color: var(--closed); }
@@ -376,7 +377,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-29.1";
+const VERSION = "2026-10-29.2";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -646,7 +647,7 @@ function route() {
   if (page === "voorspellingen") return renderHistory(arg || "weekend");
   if (page === "profiel") return renderProfile();
   if (page === "beheer" && state.me?.is_admin) return renderAdmin(arg || "kalender");
-  if (page === "uitslagen" && state.me?.is_admin) return renderResultsTab();
+  if (page === "uitslagen" && state.me?.is_admin) return renderResultsTab(arg);
   if (page === "spelregels") return renderRules();
   return renderRaces();
 }
@@ -1305,12 +1306,70 @@ const needMfa = () => `<div class="panel stack"><h3>Tweestapsverificatie nodig</
   <p>Dit deel is alleen te gebruiken met tweestapsverificatie. Zet die aan via het menu, bij Profiel. Heb je hem al aan, log dan opnieuw in met je code.</p>
   <a class="btn" href="#profiel">Naar Profiel</a></div>`;
 
-async function renderResultsTab() {
+async function renderResultsTab(arg) {
   setTitle("Uitslagen");
   if (state.aal !== "aal2") { view().innerHTML = needMfa(); return; }
   view().onclick = null;
+  if (!arg) return renderResultsList();
+  if (resultsSel !== arg) fetchNotes = {};
+  resultsSel = arg;
   view().innerHTML = `<div id="adm" class="stack">${LOADING}</div>`;
   admResults($("#adm"));
+}
+
+// Lijst met alle gesloten races; de laatste bovenaan met oranje rand
+async function renderResultsList() {
+  const year = state.season;
+  if (!year) { view().innerHTML = `<p class="panel">Er is nog geen seizoen.</p>`; return; }
+  view().innerHTML = LOADING;
+  const { data: gps } = await sb.from("grand_prix").select("*").eq("season", year).neq("status", "geannuleerd");
+  const now = new Date();
+  const closed = (gps || []).filter(g => g.closes_at && new Date(g.closes_at) <= now)
+    .sort((a, b) => new Date(b.race_start || 0) - new Date(a.race_start || 0));
+  const ids = closed.map(g => g.id);
+  const [{ data: gq }, { data: sq }] = await Promise.all([
+    ids.length ? sb.from("gp_questions").select("id, grand_prix_id").in("grand_prix_id", ids) : { data: [] },
+    sb.from("gp_questions").select("id").eq("season", year),
+  ]);
+  const allQ = [...(gq || []).map(q => q.id), ...(sq || []).map(q => q.id)];
+  const { data: ans } = allQ.length
+    ? await sb.from("correct_answers").select("gp_question_id").in("gp_question_id", allQ).neq("source", "voorstel")
+    : { data: [] };
+  const done = new Set((ans || []).map(a => a.gp_question_id));
+  const per = {};
+  for (const q of gq || []) {
+    const r = per[q.grand_prix_id] ||= { total: 0, filled: 0 };
+    r.total++;
+    if (done.has(q.id)) r.filled++;
+  }
+  const season = { total: (sq || []).length, filled: (sq || []).filter(q => done.has(q.id)).length };
+  if (!closed.length && !season.total) {
+    view().innerHTML = `<p class="panel">Er zijn nog geen races gesloten in ${year}. Een race verschijnt hier zodra het invullen van de voorspellingen sluit.</p>`;
+    return;
+  }
+  const [last, ...rest] = closed;
+  const statusText = r => r?.total && r.filled === r.total ? "Alle uitslagen ingevuld." : `${r?.filled || 0} van ${r?.total || 0} ingevuld.`;
+  view().innerHTML = `
+    ${last ? `<a class="next" href="#uitslagen/${last.id}">
+      <span class="rnd" aria-hidden="true">${last.round ?? ""}</span>
+      <h2>${esc(last.name)}</h2>
+      <p>Race: ${fmtDateTime(last.race_start)}. ${statusText(per[last.id])}</p>
+      ${per[last.id]?.total && per[last.id].filled === per[last.id].total ? `<span class="ok-mark">${CHECK_SVG}</span>` : ""}
+    </a>` : ""}
+    <ul class="races res">
+      ${rest.map(g => `<li><a href="#uitslagen/${g.id}">
+        <span class="rnd">${g.round ?? "–"}</span>
+        <span class="nm">${esc(g.name)}</span>
+        ${checkMark(per[g.id])}
+        <span class="dt">${fmtDate(g.race_start)}</span>
+      </a></li>`).join("")}
+      ${season.total ? `<li><a href="#uitslagen/seizoen">
+        <span class="rnd">${String(year).slice(2)}</span>
+        <span class="nm">Seizoensvragen</span>
+        ${checkMark(season)}
+        <span class="dt">Na de laatste race</span>
+      </a></li>` : ""}
+    </ul>`;
 }
 
 async function renderAdmin(sub) {
@@ -1446,30 +1505,24 @@ async function deriveSeason(year, qs) {
 
 async function admResults(box) {
   const year = state.season;
-  if (!year) { box.innerHTML = `<p class="panel">Er is nog geen seizoen. Voeg dat eerst toe onder Kalender.</p>`; return; }
-  const { data: gps } = await sb.from("grand_prix").select("*").eq("season", year)
-    .neq("status", "geannuleerd").order("race_start", { ascending: true, nullsFirst: false });
-  const list = gps || [];
-  const past = list.filter(g => g.race_start && new Date(g.race_start) <= new Date());
-  if (!resultsSel || (resultsSel !== "seizoen" && !list.some(g => String(g.id) === resultsSel))) {
-    resultsSel = past.length ? String(past[past.length - 1].id) : list[0] ? String(list[0].id) : "seizoen";
-  }
+  if (!year) { box.innerHTML = `<p class="panel">Er is nog geen seizoen.</p>`; return; }
   const sel = resultsSel;
-  const gp = list.find(g => String(g.id) === sel);
+  let gp = null;
+  if (sel !== "seizoen") {
+    ({ data: gp } = await sb.from("grand_prix").select("*").eq("id", Number(sel)).maybeSingle());
+    if (!gp) { box.innerHTML = `<p class="panel">Deze race bestaat niet (meer). <a href="#uitslagen">Naar alle uitslagen</a></p>`; return; }
+  }
   box.innerHTML = `
-    <div class="panel stack">
-      <label class="field"><span>Uitslag invullen voor</span>
-      <select id="resSel">
-        ${list.map(g => `<option value="${g.id}" ${String(g.id) === sel ? "selected" : ""}>${g.round ?? "–"}. ${esc(g.name)} (${fmtDate(g.race_start)})</option>`).join("")}
-        <option value="seizoen" ${sel === "seizoen" ? "selected" : ""}>Seizoensvragen ${year}</option>
-      </select></label>
+    <a class="back" href="#uitslagen">Alle uitslagen</a>
+    <div><h2 class="gp-title">${sel === "seizoen" ? `Seizoensvragen ${year}` : esc(gp.name)}</h2>
+      ${gp ? timesBlock(gp) : ""}</div>
+    <div class="panel">
       <div class="row wrap" style="justify-content:space-between">
         <p class="muted small" style="flex:1 1 20rem">Ophalen vult in wat zeker is en doet een voorstel (oranje) waar je zelf naar moet kijken. Een voorstel telt pas mee als je de uitslag opslaat. Wat je zelf hebt ingevuld, wordt nooit overschreven.</p>
         <button type="button" class="btn ghost" id="fetchRes">Uitslag ophalen</button>
       </div>
     </div>
     <div id="resBox">${LOADING}</div>`;
-  $("#resSel").onchange = e => { resultsSel = e.target.value; fetchNotes = {}; admResults(box); };
 
   const base = sb.from("gp_questions").select("*");
   const { data: qs } = await (sel === "seizoen" ? base.eq("season", year) : base.eq("grand_prix_id", Number(sel))).order("sort_order");

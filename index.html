@@ -325,6 +325,14 @@ body.wide main { max-width: 1200px; }
 .times { display: grid; grid-template-columns: auto 1fr; gap: 0 .5rem; margin: 0; color: var(--muted); }
 .times dt, .times dd { margin: 0; }
 
+/* Knoppen rechtsboven en erelijst */
+.hrow { display: flex; gap: .5rem; align-items: center; }
+.hbtn { color: #FFFFFF; text-decoration: none; border: 1px solid #ffffffaa; border-radius: 6px; padding: .3rem .6rem; font: 600 1rem var(--display); }
+.trophy { text-align: center; }
+.trophy img { width: 100%; max-width: 340px; border-radius: 12px; display: inline-block; }
+.list .yr { font-family: var(--display); color: var(--orange); margin-right: .5rem; }
+.pmx td.tnum { text-align: center; font-variant-numeric: tabular-nums; }
+
 /* Punten per race */
 .matrix { overflow-x: auto; background: #000; border: 1px solid var(--line); border-radius: 10px; padding: .4rem 0 .6rem; }
 .matrix table { border-collapse: collapse; font-size: 1rem; }
@@ -379,7 +387,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-29.4";
+const VERSION = "2026-10-29.5";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -626,11 +634,54 @@ function renderSeasonPicker() {
   const el = $("#seasonPick");
   const page = (location.hash.slice(1) || "races").split("/")[0];
   const years = standYears();
-  if (!state.user || page !== "stand" || !years.length) { el.innerHTML = ""; return; }
+  if (!state.user || !["stand", "erelijst"].includes(page)) { el.innerHTML = ""; return; }
+  if (page === "erelijst") {
+    el.innerHTML = `<div class="hrow"><a class="hbtn" href="#stand">Stand</a></div>`;
+    return;
+  }
   if (!years.includes(state.standYear)) state.standYear = years[0];
-  el.innerHTML = `<select aria-label="Seizoen">${years.map(y =>
-    `<option value="${y}" ${y === state.standYear ? "selected" : ""}>${y}</option>`).join("")}</select>`;
-  el.querySelector("select").onchange = e => { state.standYear = Number(e.target.value); renderStand(); };
+  el.innerHTML = `<div class="hrow">
+    ${state.archived?.length ? `<a class="hbtn" href="#erelijst">Erelijst</a>` : ""}
+    ${years.length ? `<select aria-label="Seizoen">${years.map(y =>
+      `<option value="${y}" ${y === state.standYear ? "selected" : ""}>${y}</option>`).join("")}</select>` : ""}
+  </div>`;
+  const sel = el.querySelector("select");
+  if (sel) sel.onchange = e => { state.standYear = Number(e.target.value); renderStand(); };
+}
+
+// Erelijst: de beker, de winnaars per jaar en titels per deelnemer
+async function renderHonours() {
+  setTitle("Erelijst");
+  setTab("stand");
+  view().innerHTML = LOADING;
+  const { data } = await sb.from("final_standings").select("season, display_name, rank, points").order("season", { ascending: false });
+  const rows = data || [];
+  const years = [...new Set(rows.map(r => r.season))];
+  const winners = years.map(y => {
+    const w = rows.filter(r => r.season === y && r.rank === 1);
+    return { y, names: w.map(r => r.display_name), points: w[0]?.points };
+  });
+  const per = {};
+  for (const r of rows) {
+    const p = per[r.display_name] ||= { name: r.display_name, titles: 0, podiums: 0, seasons: 0 };
+    p.seasons++;
+    if (r.rank === 1) p.titles++;
+    if (r.rank <= 3) p.podiums++;
+  }
+  const table = Object.values(per).sort((a, b) => b.titles - a.titles || b.podiums - a.podiums || a.name.localeCompare(b.name));
+  view().innerHTML = `
+    <div class="trophy"><img src="erelijst-beker.jpg" alt="Zilveren beker van de F1 Poule op een houten voet"></div>
+    <h3>Winnaars</h3>
+    <ul class="list panel">${winners.map(w => `<li>
+      <span><b class="yr">${w.y}</b> ${esc(w.names.join(" en "))}</span>
+      <span class="muted">${w.points} punten</span></li>`).join("")}</ul>
+    <h3>Titels en podiumplaatsen</h3>
+    <div class="pmx"><table>
+      <thead><tr><th class="q"></th><th>Titels</th><th>Podium</th><th>Seizoenen</th></tr></thead>
+      <tbody>${table.map(p => `<tr><th class="q">${esc(p.name)}</th>
+        <td class="tnum">${p.titles}</td><td class="tnum">${p.podiums}</td><td class="tnum">${p.seasons}</td></tr>`).join("")}</tbody>
+    </table></div>
+    <p class="muted small">Podium is een plaats bij de eerste drie. Het lopende seizoen telt mee zodra het is afgesloten.</p>`;
 }
 
 // ---------------------------------------------------------------------
@@ -646,6 +697,7 @@ function route() {
   if (page === "gp") return renderGp(Number(arg));
   if (page === "seizoen") return renderSeasonQs(Number(arg));
   if (page === "stand") return renderStand();
+  if (page === "erelijst") return renderHonours();
   if (page === "voorspellingen") return renderHistory(arg || "weekend");
   if (page === "profiel") return renderProfile();
   if (page === "beheer" && state.me?.is_admin) return renderAdmin(arg || "kalender");

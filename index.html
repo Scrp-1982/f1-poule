@@ -234,6 +234,8 @@ details.gpe summary { cursor: pointer; font-weight: 600; }
 details.gpe form { margin-top: .75rem; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
 .check { display: flex; gap: .5rem; align-items: center; }
+.pref { display: flex; gap: .7rem; align-items: flex-start; cursor: pointer; }
+.pref input { width: 1.25rem; height: 1.25rem; margin-top: .2rem; accent-color: var(--orange); flex: none; }
 details.fold > summary {
   list-style: none; cursor: pointer; display: flex; align-items: center; gap: .6rem;
   font: 600 1.3rem var(--display);
@@ -377,7 +379,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-29.2";
+const VERSION = "2026-10-29.4";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -1215,9 +1217,22 @@ async function pushPanel(el) {
     const j = sub.toJSON();
     sb.rpc("save_push_subscription", { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth });
     el.innerHTML = `
-      <p>Meldingen staan aan op dit apparaat. Je krijgt een melding als er een race aankomt en als je je voorspelling nog niet hebt ingevuld.</p>
+      <p>Meldingen staan aan op dit apparaat. Kies welke je wilt ontvangen:</p>
+      <label class="pref"><input type="checkbox" id="prefWeek" ${state.me?.notify_week !== false ? "checked" : ""}>
+        <span><b>Raceweek op maandag</b><br><span class="muted small">Een seintje dat er een race aankomt.</span></span></label>
+      <label class="pref"><input type="checkbox" id="prefLast" ${state.me?.notify_last !== false ? "checked" : ""}>
+        <span><b>Laatste invuldag</b><br><span class="muted small">Een herinnering de dag voor het sluiten, om nog iets in te vullen of aan te passen.</span></span></label>
+      <p class="muted small">Deze keuzes gelden voor al je apparaten.</p>
       <div class="row wrap"><button type="button" class="btn ghost" id="pushTest">Testmelding sturen</button>
       <button type="button" class="btn ghost" id="pushOff">Uitzetten</button></div>`;
+    const savePref = async (field, on) => {
+      const { error } = await sb.from("profiles").update({ [field]: on }).eq("id", state.user.id);
+      if (error) return toast("Opslaan lukte niet: " + error.message);
+      if (state.me) state.me[field] = on;
+      toast("Opgeslagen");
+    };
+    $("#prefWeek").onchange = e => savePref("notify_week", e.target.checked);
+    $("#prefLast").onchange = e => savePref("notify_last", e.target.checked);
     $("#pushTest").onclick = async () => {
       const { data, error } = await sb.rpc("send_test_push");
       toast(error ? "Versturen lukte niet: " + error.message : data ? "De testmelding komt over ongeveer een minuut. Sluit de app, dan zie je hem binnenkomen." : "Dit apparaat is nog niet aangemeld.");
@@ -1231,7 +1246,7 @@ async function pushPanel(el) {
     return;
   }
   el.innerHTML = `
-    <p class="muted">Krijg een melding als er een race aankomt en als je je voorspelling nog niet hebt ingevuld.</p>
+    <p class="muted">Krijg een melding als er een race aankomt, en de dag voor het sluiten een herinnering.</p>
     <button type="button" class="btn" id="pushOn">Meldingen aanzetten</button>`;
   $("#pushOn").onclick = async () => {
     const perm = await Notification.requestPermission();
@@ -1241,6 +1256,9 @@ async function pushPanel(el) {
       const j = s.toJSON();
       const { error } = await sb.rpc("save_push_subscription", { p_endpoint: j.endpoint, p_p256dh: j.keys.p256dh, p_auth: j.keys.auth });
       if (error) return toast("Aanmelden lukte niet: " + error.message);
+      // Standaard beide meldingen aan
+      await sb.from("profiles").update({ notify_week: true, notify_last: true }).eq("id", state.user.id);
+      if (state.me) { state.me.notify_week = true; state.me.notify_last = true; }
       toast("Meldingen staan aan");
     } catch (err) {
       toast("Aanzetten lukte niet: " + (err.message || err));
@@ -1742,8 +1760,8 @@ async function admNotifications(box) {
   ]);
   if (!st?.length) { box.innerHTML = `<p class="panel">De meldingen zijn nog niet ingesteld. Draai eerst het SQL-script voor de meldingen.</p>`; return; }
   const LABEL = {
-    aankondiging: "Er komt een race aan: op maandag van de raceweek, naar iedereen",
-    herinnering: "Herinnering: de avond voor het sluiten, alleen naar wie nog niet alles heeft ingevuld",
+    aankondiging: "Raceweek op maandag: naar iedereen die dit in Profiel aan heeft staan",
+    herinnering: "Laatste invuldag: de dag voor het sluiten, naar iedereen die dit in Profiel aan heeft staan",
   };
   const g = next?.[0];
   const dueOf = s => {

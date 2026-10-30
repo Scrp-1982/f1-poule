@@ -329,7 +329,7 @@ body.wide main { max-width: 1200px; }
 .hrow { display: flex; gap: .5rem; align-items: center; }
 .hbtn { color: #FFFFFF; text-decoration: none; border: 1px solid #ffffffaa; border-radius: 6px; padding: .3rem .6rem; font: 600 1rem var(--display); }
 .trophy { text-align: center; }
-.trophy img { width: 100%; max-width: 340px; border-radius: 12px; display: inline-block; }
+.trophy img { width: 100%; max-width: 480px; border-radius: 12px; display: inline-block; }
 .list .yr { font-family: var(--display); color: var(--orange); margin-right: .5rem; }
 .pmx td.tnum { text-align: center; font-variant-numeric: tabular-nums; }
 
@@ -387,7 +387,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-29.5";
+const VERSION = "2026-10-29.6";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -649,39 +649,11 @@ function renderSeasonPicker() {
   if (sel) sel.onchange = e => { state.standYear = Number(e.target.value); renderStand(); };
 }
 
-// Erelijst: de beker, de winnaars per jaar en titels per deelnemer
-async function renderHonours() {
+// Erelijst: alleen de beker
+function renderHonours() {
   setTitle("Erelijst");
   setTab("stand");
-  view().innerHTML = LOADING;
-  const { data } = await sb.from("final_standings").select("season, display_name, rank, points").order("season", { ascending: false });
-  const rows = data || [];
-  const years = [...new Set(rows.map(r => r.season))];
-  const winners = years.map(y => {
-    const w = rows.filter(r => r.season === y && r.rank === 1);
-    return { y, names: w.map(r => r.display_name), points: w[0]?.points };
-  });
-  const per = {};
-  for (const r of rows) {
-    const p = per[r.display_name] ||= { name: r.display_name, titles: 0, podiums: 0, seasons: 0 };
-    p.seasons++;
-    if (r.rank === 1) p.titles++;
-    if (r.rank <= 3) p.podiums++;
-  }
-  const table = Object.values(per).sort((a, b) => b.titles - a.titles || b.podiums - a.podiums || a.name.localeCompare(b.name));
-  view().innerHTML = `
-    <div class="trophy"><img src="erelijst-beker.jpg" alt="Zilveren beker van de F1 Poule op een houten voet"></div>
-    <h3>Winnaars</h3>
-    <ul class="list panel">${winners.map(w => `<li>
-      <span><b class="yr">${w.y}</b> ${esc(w.names.join(" en "))}</span>
-      <span class="muted">${w.points} punten</span></li>`).join("")}</ul>
-    <h3>Titels en podiumplaatsen</h3>
-    <div class="pmx"><table>
-      <thead><tr><th class="q"></th><th>Titels</th><th>Podium</th><th>Seizoenen</th></tr></thead>
-      <tbody>${table.map(p => `<tr><th class="q">${esc(p.name)}</th>
-        <td class="tnum">${p.titles}</td><td class="tnum">${p.podiums}</td><td class="tnum">${p.seasons}</td></tr>`).join("")}</tbody>
-    </table></div>
-    <p class="muted small">Podium is een plaats bij de eerste drie. Het lopende seizoen telt mee zodra het is afgesloten.</p>`;
+  view().innerHTML = `<div class="trophy"><img src="erelijst-beker.jpg" alt="Zilveren beker van de F1 Poule met de winnaars per jaar"></div>`;
 }
 
 // ---------------------------------------------------------------------

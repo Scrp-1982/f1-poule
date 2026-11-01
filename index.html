@@ -341,7 +341,7 @@ body.wide main { max-width: 1200px; }
 .matrix th.x span { text-decoration: line-through; color: var(--muted); }
 .matrix th.v, .matrix td { width: 2.6rem; min-width: 2.6rem; text-align: center; }
 .matrix td { padding: .45rem .3rem; font-variant-numeric: tabular-nums; }
-.matrix td.nm, .matrix th.nm { width: auto; min-width: 6rem; text-align: left; padding: .45rem 1.2rem .45rem .9rem; white-space: nowrap; position: sticky; left: 0; background: #000; }
+.matrix td.nm, .matrix th.nm { width: auto; min-width: 6rem; text-align: left; padding: .45rem 1.2rem .45rem .9rem; white-space: nowrap; position: sticky; left: 0; background: #000; z-index: 2; }
 .matrix td.tot { width: 3.4rem; min-width: 3.4rem; font: 700 1.15rem var(--display); color: var(--orange); }
 .matrix th.v.totc { padding-right: .4rem; }
 .matrix tbody tr:nth-child(odd) td:not(.nm) { background: var(--row); }
@@ -387,7 +387,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-29.9";
+const VERSION = "2026-10-29.10";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";

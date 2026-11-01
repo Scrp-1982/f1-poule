@@ -387,7 +387,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-29.8";
+const VERSION = "2026-10-29.9";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -1561,7 +1561,10 @@ async function admResults(box) {
     <div class="panel">
       <div class="row wrap" style="justify-content:space-between">
         <p class="muted small" style="flex:1 1 20rem">Ophalen vult in wat zeker is en doet een voorstel (oranje) waar je zelf naar moet kijken. Een voorstel telt pas mee als je de uitslag opslaat. Wat je zelf hebt ingevuld, wordt nooit overschreven.</p>
-        <button type="button" class="btn ghost" id="fetchRes">Uitslag ophalen</button>
+        <div class="row wrap">
+          <button type="button" class="btn ghost" id="fetchRes">Uitslag ophalen</button>
+          ${sel !== "seizoen" ? `<button type="button" class="btn ghost" id="aiRes">Opzoeken met Gemini</button>` : ""}
+        </div>
       </div>
     </div>
     <div id="resBox">${LOADING}</div>`;
@@ -1623,6 +1626,78 @@ async function admResults(box) {
       toast(ids.length ? `Opgehaald: ${sure} zeker${prop ? `, ${prop} voorstel${prop > 1 ? "len" : ""} om te controleren` : ""}.` : "Er was niets nieuws op te halen.");
     } catch (err) {
       toast("Ophalen lukte niet: " + (err.message || err));
+    }
+    admResults(box);
+  };
+
+  // Rijder van de dag en snelste pitstop opzoeken met Gemini (als voorstel)
+  const aiBtn = $("#aiRes");
+  if (aiBtn) aiBtn.onclick = async () => {
+    const qDotd = qs.find(q => q.auto_key === "driver_of_day");
+    const qPit = qs.find(q => q.auto_key === "fastest_pit_team");
+    if (!qDotd && !qPit) return toast("Deze race heeft geen vragen over rijder van de dag of snelste pitstop.");
+    aiBtn.disabled = true;
+    aiBtn.textContent = "Gemini zoekt…";
+    try {
+      const pending = collectResults(false);
+      if (pending.changed.length) {
+        const error = await writeResults(pending);
+        if (error) throw new Error(error.message);
+      }
+      const { data, error } = await sb.functions.invoke("ai-lookup", {
+        body: { race: gp.name, country: gp.country, season: gp.season, date: (gp.race_start || "").slice(0, 10) },
+      });
+      if (error) {
+        let msg = error.message;
+        try { msg = (await error.context.json()).error || msg; } catch { /* geen details */ }
+        throw new Error(msg);
+      }
+      const norm = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const findDriver = name => {
+        const n = norm(name);
+        return state.drivers.filter(d => n.includes(norm(d.last_name)))
+          .sort((a, b) => b.last_name.length - a.last_name.length)[0];
+      };
+      const TEAM_ALIAS = [["racing bulls", "rb"], ["visa cash app", "rb"], ["vcarb", "rb"], ["red bull", "red_bull"],
+        ["mercedes", "mercedes"], ["mclaren", "mclaren"], ["ferrari", "ferrari"], ["williams", "williams"],
+        ["haas", "haas"], ["alpine", "alpine"], ["aston", "aston_martin"], ["audi", "audi"], ["sauber", "audi"],
+        ["kick", "audi"], ["cadillac", "cadillac"]];
+      const findTeam = name => {
+        const n = norm(name);
+        const alias = TEAM_ALIAS.find(([k]) => n.includes(k));
+        return (alias && state.teams.find(t => t.ext_id === alias[1] || (alias[1] === "audi" && t.ext_id === "sauber")))
+          || state.teams.find(t => n.includes(norm(t.name)) || norm(t.name).includes(n));
+      };
+      const bron = (data.sources || []).map(s => s.title).filter(Boolean).slice(0, 2).join(", ");
+      const out = [];
+      const dd = data.driver_of_the_day && findDriver(data.driver_of_the_day);
+      if (qDotd && dd) out.push({ q: qDotd, row: { driver_id: dd.id, team_id: null, position: null },
+        note: `Volgens Gemini: ${shortName(dd)}.${bron ? " Bron: " + bron + "." : ""}` });
+      const tt = data.fastest_pit_stop_team && findTeam(data.fastest_pit_stop_team);
+      if (qPit && tt) {
+        const extra = [data.fastest_pit_stop_driver, data.fastest_pit_stop_time ? `${String(data.fastest_pit_stop_time).replace(".", ",")} s` : ""]
+          .filter(x => x && x !== "null").join(", ");
+        out.push({ q: qPit, row: { driver_id: null, team_id: tt.id, position: null },
+          note: `Volgens Gemini: ${tt.name}${extra ? ` (${extra})` : ""}.${bron ? " Bron: " + bron + "." : ""}` });
+      }
+      const { data: fresh } = await sb.from("correct_answers").select("*").in("gp_question_id", qs.map(q => q.id));
+      const manual = new Set((fresh || []).filter(a => a.source === "handmatig").map(a => a.gp_question_id));
+      const todo = out.filter(o => !manual.has(o.q.id));
+      if (todo.length) {
+        let { error: e1 } = await sb.from("correct_answers").delete().in("gp_question_id", todo.map(o => o.q.id)).neq("source", "handmatig");
+        if (!e1) ({ error: e1 } = await sb.from("correct_answers").insert(todo.map(o => ({
+          gp_question_id: o.q.id, source: "voorstel", note: o.note, ...o.row }))));
+        if (e1) throw new Error(e1.message);
+      }
+      const missing = [];
+      if (qDotd && !dd) missing.push("rijder van de dag");
+      if (qPit && !tt) missing.push("snelste pitstop");
+      toast(todo.length
+        ? `Gemini: ${todo.length} voorstel${todo.length > 1 ? "len" : ""} klaargezet.${missing.length ? " Niet gevonden: " + missing.join(" en ") + "." : ""}`
+        : missing.length ? `Gemini vond niets bruikbaars voor ${missing.join(" en ")}.${data.raw ? " Antwoord: " + data.raw : ""}`
+        : "Die vragen had je al zelf ingevuld; er is niets overschreven.");
+    } catch (err) {
+      toast("Opzoeken lukte niet: " + (err.message || err));
     }
     admResults(box);
   };

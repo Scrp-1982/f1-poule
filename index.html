@@ -387,7 +387,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-29.6";
+const VERSION = "2026-10-29.8";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -1499,7 +1499,7 @@ async function deriveResults(gp, qs) {
         const d = state.drivers.find(x => x.ext_id === s.driverId);
         v = { team_id: r ? tId(r.Constructor.constructorId) : undefined };
         src = "voorstel";
-        note = `Eerste stop: ${d ? shortName(d) : s.driverId} in ronde ${s.lap} om ${String(s.time).slice(0, 8)} (plaatselijke tijd).`;
+        note = `Eerste stop: ${d ? shortName(d) : s.driverId} in ronde ${s.lap}.`;
       } else if (results.length) note = "De pitstopgegevens zijn nog niet beschikbaar. Probeer het later opnieuw.";
     } else if (k === "driver_of_day" || k === "fastest_pit_team" || !k) {
       note = "Staat niet in de gegevensbron. Zoek het op en vul zelf in.";

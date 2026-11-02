@@ -387,7 +387,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-29.10";
+const VERSION = "2026-10-29.11";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -1693,7 +1693,7 @@ async function admResults(box) {
       if (qDotd && !dd) missing.push("rijder van de dag");
       if (qPit && !tt) missing.push("snelste pitstop");
       toast(todo.length
-        ? `Gemini: ${todo.length} voorstel${todo.length > 1 ? "len" : ""} klaargezet.${missing.length ? " Niet gevonden: " + missing.join(" en ") + "." : ""}`
+        ? `Gemini${data.model ? ` (${data.model})` : ""}: ${todo.length} voorstel${todo.length > 1 ? "len" : ""} klaargezet.${missing.length ? " Niet gevonden: " + missing.join(" en ") + "." : ""}`
         : missing.length ? `Gemini vond niets bruikbaars voor ${missing.join(" en ")}.${data.raw ? " Antwoord: " + data.raw : ""}`
         : "Die vragen had je al zelf ingevuld; er is niets overschreven.");
     } catch (err) {

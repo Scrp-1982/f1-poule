@@ -387,7 +387,7 @@ body.wide main { max-width: 1200px; }
 // ---------------------------------------------------------------------
 // Instellingen
 // ---------------------------------------------------------------------
-const VERSION = "2026-10-29.11";
+const VERSION = "2026-10-29.12";
 const SUPABASE_URL = "https://wddimxolwygkuaoiovte.supabase.co";
 const SUPABASE_KEY = "sb_publishable_CNctgxeIuYHmUkPLG9nIVQ_107mmpnP";
 const SITE_URL = "https://f1.mhavers.nl/";
@@ -1563,7 +1563,7 @@ async function admResults(box) {
         <p class="muted small" style="flex:1 1 20rem">Ophalen vult in wat zeker is en doet een voorstel (oranje) waar je zelf naar moet kijken. Een voorstel telt pas mee als je de uitslag opslaat. Wat je zelf hebt ingevuld, wordt nooit overschreven.</p>
         <div class="row wrap">
           <button type="button" class="btn ghost" id="fetchRes">Uitslag ophalen</button>
-          ${sel !== "seizoen" ? `<button type="button" class="btn ghost" id="aiRes">Opzoeken met Gemini</button>` : ""}
+          ${sel !== "seizoen" ? `<button type="button" class="btn ghost" id="aiRes">Opzoeken met AI</button>` : ""}
         </div>
       </div>
     </div>
@@ -1630,14 +1630,14 @@ async function admResults(box) {
     admResults(box);
   };
 
-  // Rijder van de dag en snelste pitstop opzoeken met Gemini (als voorstel)
+  // Rijder van de dag en snelste pitstop opzoeken met AI (als voorstel)
   const aiBtn = $("#aiRes");
   if (aiBtn) aiBtn.onclick = async () => {
     const qDotd = qs.find(q => q.auto_key === "driver_of_day");
     const qPit = qs.find(q => q.auto_key === "fastest_pit_team");
     if (!qDotd && !qPit) return toast("Deze race heeft geen vragen over rijder van de dag of snelste pitstop.");
     aiBtn.disabled = true;
-    aiBtn.textContent = "Gemini zoekt…";
+    aiBtn.textContent = "Bezig met zoeken…";
     try {
       const pending = collectResults(false);
       if (pending.changed.length) {
@@ -1672,13 +1672,13 @@ async function admResults(box) {
       const out = [];
       const dd = data.driver_of_the_day && findDriver(data.driver_of_the_day);
       if (qDotd && dd) out.push({ q: qDotd, row: { driver_id: dd.id, team_id: null, position: null },
-        note: `Volgens Gemini: ${shortName(dd)}.${bron ? " Bron: " + bron + "." : ""}` });
+        note: `Volgens ${data.provider || "AI"}: ${shortName(dd)}.${bron ? " Bron: " + bron + "." : ""}` });
       const tt = data.fastest_pit_stop_team && findTeam(data.fastest_pit_stop_team);
       if (qPit && tt) {
         const extra = [data.fastest_pit_stop_driver, data.fastest_pit_stop_time ? `${String(data.fastest_pit_stop_time).replace(".", ",")} s` : ""]
           .filter(x => x && x !== "null").join(", ");
         out.push({ q: qPit, row: { driver_id: null, team_id: tt.id, position: null },
-          note: `Volgens Gemini: ${tt.name}${extra ? ` (${extra})` : ""}.${bron ? " Bron: " + bron + "." : ""}` });
+          note: `Volgens ${data.provider || "AI"}: ${tt.name}${extra ? ` (${extra})` : ""}.${bron ? " Bron: " + bron + "." : ""}` });
       }
       const { data: fresh } = await sb.from("correct_answers").select("*").in("gp_question_id", qs.map(q => q.id));
       const manual = new Set((fresh || []).filter(a => a.source === "handmatig").map(a => a.gp_question_id));
@@ -1693,8 +1693,8 @@ async function admResults(box) {
       if (qDotd && !dd) missing.push("rijder van de dag");
       if (qPit && !tt) missing.push("snelste pitstop");
       toast(todo.length
-        ? `Gemini${data.model ? ` (${data.model})` : ""}: ${todo.length} voorstel${todo.length > 1 ? "len" : ""} klaargezet.${missing.length ? " Niet gevonden: " + missing.join(" en ") + "." : ""}`
-        : missing.length ? `Gemini vond niets bruikbaars voor ${missing.join(" en ")}.${data.raw ? " Antwoord: " + data.raw : ""}`
+        ? `${data.provider || "AI"}${data.model ? ` (${data.model})` : ""}: ${todo.length} voorstel${todo.length > 1 ? "len" : ""} klaargezet.${missing.length ? " Niet gevonden: " + missing.join(" en ") + "." : ""}`
+        : missing.length ? `${data.provider || "AI"} vond niets bruikbaars voor ${missing.join(" en ")}.${data.raw ? " Antwoord: " + data.raw : ""}`
         : "Die vragen had je al zelf ingevuld; er is niets overschreven.");
     } catch (err) {
       toast("Opzoeken lukte niet: " + (err.message || err));
